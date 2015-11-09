@@ -62,6 +62,8 @@ Classes:
 
 .. autoclass:: neo.io.KwikIO
 
+.. autoclass:: neo.io.OpenEphysIO
+
 .. autoclass:: neo.io.WinEdrIO
 
 .. autoclass:: neo.io.WinWcpIO
@@ -115,6 +117,7 @@ from neo.io.rawbinarysignalio import RawBinarySignalIO
 from neo.io.spike2io import Spike2IO
 from neo.io.stimfitio import StimfitIO
 from neo.io.kwikio import KwikIO
+from neo.io.openephysio import OpenEphysIO
 from neo.io.tdtio import TdtIO
 from neo.io.winedrio import WinEdrIO
 from neo.io.winwcpio import WinWcpIO
@@ -148,6 +151,7 @@ iolist = [AlphaOmegaIO,
           StimfitIO,
           TdtIO,
           KwikIO,
+          OpenEphysIO,
           WinEdrIO,
           WinWcpIO]
 
