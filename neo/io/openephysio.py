@@ -112,11 +112,12 @@ class OpenEphysIO(BaseIO):
             node_info = {}
             if processorName[0] == 'Sources':
                 if processorName[1] == 'OSC Port':
-                    oscInfo = processor.findall('OSCNODE')
-                    node_info['address'] = oscInfo[0].get('address')
+                    oscInfo = processor.findall('EDITOR')
+                    osc = oscInfo[0].findall('OSCNODE')
+                    node_info['address'] = osc[0].get('address')
                     node_info['NodeId'] = processor.attrib['NodeId']
                 elif processorName[1] == 'Rhythm FPGA':
-                    chanInfo = processor.findall('CHANNEL_INFO')[0] # assumes one FPGA??
+                    chanInfo = processor.findall('CHANNEL_INFO')[0]
                     chan = [a.get('name') for a in chanInfo.findall('CHANNEL')]
                     node_info['chanNames'] = chan
                     node_info['NodeId'] = processor.attrib['NodeId']
