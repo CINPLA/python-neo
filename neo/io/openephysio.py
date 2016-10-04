@@ -97,8 +97,8 @@ class OpenEphysIO(BaseIO):
             experimentNum : experiment number
         """
         BaseIO.__init__(self)
-        self._filename = filename
-        self._path, file = os.path.split(filename)
+        self._filename = os.path.abspath(filename)
+        self._path, file = os.path.split(self._filename)
         self._dataset = dataset
         if int(file[-5]) > 1:
             xmlfile = 'settings_' + file[-5] + '.xml'
