@@ -21,6 +21,32 @@ import quantities as pq
 import os
 
 
+def _parse_header_and_leave_cursor(file_handle):
+    header = ""
+    while True:
+        search_string = "data_start"
+        byte = file_handle.read(1)
+        header += str(byte, 'latin-1')
+
+        if not byte:
+            raise IOError("Hit end of file '" + eeg_filename + "'' before '" + search_string + "' found.")
+
+        if header[-len(search_string):] == search_string:
+            break
+
+    params = {}
+
+    for line in header.split("\r\n"):
+        line_splitted = line.split(" ", 1)
+
+        name = line_splitted[0]
+        params[name] = None
+
+        if len(line_splitted) > 1:
+            params[name] = line_splitted[1]
+    
+    return params
+
 class AxonaIO(BaseIO):
     """
     Class for "reading" experimental data from an Axona dataset.
@@ -28,15 +54,10 @@ class AxonaIO(BaseIO):
     is_readable = True
     is_writable = False
 
-    supported_objects = [Block, Segment, AnalogSignal, ChannelIndex]
+    supported_objects = [Block, Segment, AnalogSignal, ChannelIndex, SpikeTrain]
 
-    # This class can return either a Block or a Segment
-    # The first one is the default ( self.read )
-    # These lists should go from highest object to lowest object because
-    # common_io_test assumes it.
-    readable_objects = [Block]
+    readable_objects = [Block, SpikeTrain]
 
-    # This class is not able to write objects
     writeable_objects = []
 
     has_header = False
@@ -107,7 +128,12 @@ class AxonaIO(BaseIO):
         # TODO read epoch data
         pass
 
-    def read_spiketrains():
+    def read_spiketrain(self, channel_index=0):
+        assert(SpikeTrain in self.readable_objects)
+        raw_filename = os.path.join(self._path, self._base_filename + "." + str(channel_index + 1))
+        with open(raw_filename, "rb") as f:
+            params = _parse_header_and_leave_cursor(f)
+            print(params)
         # TODO read spiketrains from raw data and cut files
         # TODO add parameter to allow user to read raw data or not
         pass
@@ -134,28 +160,7 @@ class AxonaIO(BaseIO):
             raise IOError("'.eeg' file not found:" + eeg_filename)
 
         with open(eeg_filename, "rb") as f:
-            header = ""
-            while True:
-                search_string = "data_start"
-                byte = f.read(1)
-                header += str(byte, 'latin-1')
-
-                if not byte:
-                    raise IOError("Hit end of file '" + eeg_filename + "'' before '" + search_string + "' found.")
-
-                if header[-len(search_string):] == search_string:
-                    break
-
-            params = {}
-
-            for line in header.split("\r\n"):
-                line_splitted = line.split(" ", 1)
-
-                name = line_splitted[0]
-                params[name] = None
-
-                if len(line_splitted) > 1:
-                    params[name] = line_splitted[1]
+            params = _parse_header_and_leave_cursor(f)
 
             sample_count = int(params["num_EEG_samples"])  # num_EEG_samples 120250
             sample_rate_split = params["sample_rate"].split(" ")
@@ -188,3 +193,5 @@ if __name__ == "__main__":
     import sys
     io = AxonaIO(sys.argv[1])
     io.read_analogsignal()
+    io.read_spiketrain()
+    # io.read_spiketrainlist()
