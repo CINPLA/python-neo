@@ -47,6 +47,7 @@ def _parse_header_and_leave_cursor(file_handle):
     
     return params
 
+
 class AxonaIO(BaseIO):
     """
     Class for "reading" experimental data from an Axona dataset.
@@ -133,7 +134,30 @@ class AxonaIO(BaseIO):
         raw_filename = os.path.join(self._path, self._base_filename + "." + str(channel_index + 1))
         with open(raw_filename, "rb") as f:
             params = _parse_header_and_leave_cursor(f)
-            print(params)
+            
+            bytes_per_timestamp = int(params.get("bytes_per_timestamp", 4))
+            bytes_per_sample = int(params.get("bytes_per_sample", 1))
+            num_spikes = int(params.get("num_spikes", 0))
+            samples_per_spike = int(params.get("samples_per_spike", 50))
+            
+            bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
+            bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
+            
+            bits_per_timestamp = bytes_per_timestamp * 8
+            timestamp_dtype = "int" + str(bits_per_timestamp)
+            
+            bits_per_sample = bytes_per_sample * 8
+            sample_dtype = "int" + str(bits_per_sample)
+            
+            print("Data types:", timestamp_dtype, sample_dtype)
+            
+            dtype = np.dtype([("timestamp", (timestamp_dtype, 1), 1), ("samples", (sample_dtype, 1), samples_per_spike)])
+            print("Final dtype", dtype)
+            data = np.fromfile(f, dtype=dtype, count=num_spikes)
+            print(data)
+            
+            
+            
         # TODO read spiketrains from raw data and cut files
         # TODO add parameter to allow user to read raw data or not
         pass
