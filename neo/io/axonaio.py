@@ -27,7 +27,27 @@ if python_version == 2:
     from future.builtins import str
 
 
-def _parse_header_and_leave_cursor(file_handle):
+def parse_params(text):
+    params = {}
+
+    for line in text.split("\n"):
+        line = line.strip()
+        
+        if len(line) == 0:
+            continue
+            
+        line_splitted = line.split(" ", 1)
+        
+        name = line_splitted[0]
+        params[name] = None
+
+        if len(line_splitted) > 1:
+            params[name] = line_splitted[1]
+            
+    return params
+
+
+def parse_header_and_leave_cursor(file_handle):
     header = ""
     while True:
         search_string = "data_start"
@@ -39,19 +59,15 @@ def _parse_header_and_leave_cursor(file_handle):
 
         if header[-len(search_string):] == search_string:
             break
-
-    params = {}
-
-    for line in header.split("\r\n"):
-        line_splitted = line.split(" ", 1)
-
-        name = line_splitted[0]
-        params[name] = None
-
-        if len(line_splitted) > 1:
-            params[name] = line_splitted[1]
+            
+    params = parse_params(header)
 
     return params
+    
+
+def assert_end_of_data(file_handle):
+    remaining_data = str(file_handle.read(), 'latin1')
+    assert(remaining_data.strip() == "data_end")
 
 
 class AxonaIO(BaseIO):
@@ -89,6 +105,12 @@ class AxonaIO(BaseIO):
 
         if extension != ".set":
             raise ValueError("file extension must be '.set'")
+            
+        with open(self._absolute_filename, "r") as f:
+            text = f.read()
+            
+        self._params = parse_params(text)
+        print(self._params)
 
         # TODO read the set file and store necessary values as attributes on this object
 
@@ -140,8 +162,7 @@ class AxonaIO(BaseIO):
         assert(SpikeTrain in self.readable_objects)
         raw_filename = os.path.join(self._path, self._base_filename + "." + str(tetrode_index + 1))
         with open(raw_filename, "rb") as f:
-            params = _parse_header_and_leave_cursor(f)
-
+            params = parse_header_and_leave_cursor(f)
 
             bytes_per_timestamp = int(params.get("bytes_per_timestamp", 4))
             bytes_per_sample = int(params.get("bytes_per_sample", 1))
@@ -158,8 +179,7 @@ class AxonaIO(BaseIO):
             dtype = np.dtype([("times", (timestamp_dtype, 1), 1), ("waveforms", (waveform_dtype, 1), samples_per_spike)])
             
             data = np.fromfile(f, dtype=dtype, count=num_spikes * num_chans)
-            remaining_data = str(f.read(), 'latin1')
-            assert(remaining_data == "\r\ndata_end\r\n")
+            assert_end_of_data(f)
             
         times = data["times"]
         waveforms = data["waveforms"]
@@ -180,7 +200,7 @@ class AxonaIO(BaseIO):
             raise IOError("'.pos' file not found:" + pos_filename)
 
         with open(pos_filename, "rb") as f:
-            params = _parse_header_and_leave_cursor(f)
+            params = parse_header_and_leave_cursor(f)
             print(params)
 
             sample_rate_split = params["sample_rate"].split(" ")
@@ -211,8 +231,7 @@ class AxonaIO(BaseIO):
                               ("pixel_count", (pixel_count_dtype, 1), 2)])
 
             data = np.fromfile(f, dtype=dtype, count=pos_samples_count)
-            remaining_data = str(f.read(), 'latin-1')
-            assert(remaining_data == "\r\ndata_end\r\n")
+            assert_end_of_data(f)
 
             print(data)
 
@@ -233,7 +252,7 @@ class AxonaIO(BaseIO):
             raise IOError("'.eeg' file not found:" + eeg_filename)
 
         with open(eeg_filename, "rb") as f:
-            params = _parse_header_and_leave_cursor(f)
+            params = parse_header_and_leave_cursor(f)
 
             sample_count = int(params["num_EEG_samples"])  # num_EEG_samples 120250
             sample_rate_split = params["sample_rate"].split(" ")
@@ -249,8 +268,7 @@ class AxonaIO(BaseIO):
                 # TODO Implement lazy loading
             else:
                 data = np.fromfile(f, dtype='int8', count=sample_count)
-                remaining_data = str(f.read(), 'latin-1')
-                assert(remaining_data == "\r\ndata_end\r\n")
+                assert_end_of_data(f)
                 # data = self._kwd['recordings'][str(self._dataset)]['data'].value[:, channel_index]
                 # data = data * bit_volts[channel_index]
                 analog_signal = AnalogSignal(data,
