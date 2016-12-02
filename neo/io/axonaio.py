@@ -129,34 +129,41 @@ class AxonaIO(BaseIO):
         # TODO read epoch data
         pass
 
-    def read_spiketrain(self, channel_index=0):
+    def read_spiketrain(self, tetrode_index=0):
         assert(SpikeTrain in self.readable_objects)
-        raw_filename = os.path.join(self._path, self._base_filename + "." + str(channel_index + 1))
+        raw_filename = os.path.join(self._path, self._base_filename + "." + str(tetrode_index + 1))
         with open(raw_filename, "rb") as f:
             params = _parse_header_and_leave_cursor(f)
             
             bytes_per_timestamp = int(params.get("bytes_per_timestamp", 4))
             bytes_per_sample = int(params.get("bytes_per_sample", 1))
             num_spikes = int(params.get("num_spikes", 0))
+            num_chans = int(params.get("num_chans", 1))
             samples_per_spike = int(params.get("samples_per_spike", 50))
             
             bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
             bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
             
-            timestamp_dtype = "<i" + str(bytes_per_timestamp)
+            timestamp_dtype = ">u" + str(bytes_per_timestamp)
+            waveform_dtype = "<i" + str(bytes_per_sample)            
             
-            sample_dtype = "<i" + str(bytes_per_sample)
+            dtype = np.dtype([("times", (timestamp_dtype, 1), 1), ("waveforms", (waveform_dtype, 1), samples_per_spike)])
             
-            dtype = np.dtype([("timestamp", (timestamp_dtype, 1), 1), ("samples", (sample_dtype, 1), samples_per_spike)])
-            print("Final dtype", dtype)
-            data = np.fromfile(f, dtype=dtype, count=num_spikes)
-            print(data)
+            data = np.fromfile(f, dtype=dtype, count=num_spikes * num_chans)
+            remaining_data = str(f.read(), 'latin1')
+            assert(remaining_data == "\r\ndata_end\r\n")
             
+            times = data["times"]
+            waveforms = data["waveforms"]
+            # TODO ensure waveforms is properly reshaped
+            waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
             
+            # TODO get proper units
+            # TODO get proper t_stop
+            spike_train = SpikeTrain(times, units="ms", t_stop=times[-1],
+                                     waveforms=waveforms)
             
-        # TODO read spiketrains from raw data and cut files
-        # TODO add parameter to allow user to read raw data or not
-        pass
+        # TODO add parameter to allow user to read raw data or not?
 
     def read_tracking():
         # TODO read tracking
