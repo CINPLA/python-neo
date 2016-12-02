@@ -143,13 +143,9 @@ class AxonaIO(BaseIO):
             bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
             bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
             
-            bits_per_timestamp = bytes_per_timestamp * 8
-            timestamp_dtype = "int" + str(bits_per_timestamp)
+            timestamp_dtype = "<i" + str(bytes_per_timestamp)
             
-            bits_per_sample = bytes_per_sample * 8
-            sample_dtype = "int" + str(bits_per_sample)
-            
-            print("Data types:", timestamp_dtype, sample_dtype)
+            sample_dtype = "<i" + str(bytes_per_sample)
             
             dtype = np.dtype([("timestamp", (timestamp_dtype, 1), 1), ("samples", (sample_dtype, 1), samples_per_spike)])
             print("Final dtype", dtype)
