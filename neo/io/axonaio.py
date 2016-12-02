@@ -114,10 +114,45 @@ class AxonaIO(BaseIO):
         # TODO add parameter to allow user to read raw data or not
         pass
 
-    def read_tracking():
-        # TODO read tracking
-        # TODO nag about this missing function
-        pass
+    def read_tracking(self):
+
+        # TODO fix for multiple .pos files
+        pos_filename = os.path.join(self._path, self._base_filename+".pos")
+        if not os.path.exists(pos_filename):
+            raise IOError("'.pos' file not found:" + pos_filename)
+
+        with open(pos_filename, "rb") as f:
+            header = ""
+            while True:
+                search_string = "data_start"
+                byte = f.read(1)
+                header += str(byte)
+
+                if not byte:
+                    raise IOError("Hit end of file '" + eeg_filename + "'' before '" + search_string + "' found.")
+
+                if header[-len(search_string):] == search_string:
+                    print("HEADER:")
+                    print(header)
+                    break
+
+
+                # params = {}
+                #
+                # for line in header.split("\r\n"):
+                #     line_splitted = line.split(" ", 1)
+                #
+                #     name = line_splitted[0]
+                #     params[name] = None
+                #
+                #     if len(line_splitted) > 1:
+                #         params[name] = line_splitted[1]
+                #
+                # sample_rate_split = params["sample_rate"].split(" ")
+                # assert(sample_rate_split[1] == "hz")
+                # sample_rate = float(sample_rate_split[0]) * pq.Hz # sample_rate 250.0 hz
+                # print(sample_rate)
+
 
     def read_analogsignal(self,
                       channel_index=None,
@@ -193,4 +228,5 @@ class AxonaIO(BaseIO):
 if __name__ == "__main__":
     print("Test")
     io = AxonaIO("/home/milad/Dropbox/cinpla-shared/project/axonaio/2012/2012-08/2012-08-31-104220-1199/raw/DVH_2012083105.set")
-    io.read_analogsignal()
+    # io.read_analogsignal()
+    io.read_tracking()
