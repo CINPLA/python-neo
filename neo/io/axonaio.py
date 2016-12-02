@@ -136,45 +136,7 @@ class AxonaIO(BaseIO):
         if not os.path.exists(eeg_filename):
             raise IOError("'.eeg' file not found:" + eeg_filename)
 
-
-        # f = open(eeg_filename, 'r')
-        #
-        # skip_character_count = 0
-        #
-        # for line in f:
-        #     data_start = "data_start"
-        #     if line[0:len(data_start)]==data_start:
-        #         skip_character_count += len(data_start)
-        #         break
-        #
-        #     print(line)
-        #     skip_character_count += len(line)
-        #
-        #     line_stripped = line.strip()
-        #     line_splitted = line_stripped.split(" ", 1)
-        #
-        #     name = line_splitted[0]
-        #     value = ""
-        #
-        #     if len(line_splitted) > 1:
-        #         value = line_splitted[1]
-        #
-        #     if name=="num_EEG_samples":
-        #         sample_count = int(value)
-        #         print(sample_count)
-        #
-        # f.close()
-        #
-        # with open(eeg_filename, "rb") as f:
-        #     f.seek(skip_character_count)
-        #     analog_signal = np.fromfile(f, dtype='int8', count=sample_count)
-        #     remaining_data = f.read()
-        #     assert(remaining_data == "\r\ndata_end\r\n")
-        #
-        # print(analog_signal)
-
         with open(eeg_filename, "rb") as f:
-
             header = ""
             while True:
                 search_string = "data_start"
@@ -211,7 +173,7 @@ class AxonaIO(BaseIO):
                                              units="uV", # TODO get correct unit
                                              sampling_rate=sample_rate)
                 # we add the attribute lazy_shape with the size if loaded
-                # anasig.lazy_shape = self._attrs['shape'][0]
+                # anasig.lazy_shape = self._attrs['shape'][0] # TODO do we need this
                 # TODO Implement lazy loading
             else:
                 data = np.fromfile(f, dtype='int8', count=sample_count)
