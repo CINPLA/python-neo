@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Class for reading data from a .kwik dataset
+Class for reading data from an Axona dataset
 Depends on: scipy
             h5py >= 2.5.0
+            numpy
+            quantities
 Supported: Read
 Authors: Mikkel E. Lepperød @CINPLA, Milad H. Mobarhan @CINPLA, Svenn-Arne Dragly @CINPLA
 """
@@ -18,34 +20,34 @@ import numpy as np
 import quantities as pq
 import os
 
+
 class AxonaIO(BaseIO):
     """
     Class for "reading" experimental data from an Axona dataset.
     """
-    is_readable = True # This class can only read data
-    is_writable = False # write is not supported
+    is_readable = True
+    is_writable = False
 
-    supported_objects    = [ Block, Segment, AnalogSignal,
-                             ChannelIndex]
+    supported_objects = [Block, Segment, AnalogSignal, ChannelIndex]
 
     # This class can return either a Block or a Segment
     # The first one is the default ( self.read )
     # These lists should go from highest object to lowest object because
     # common_io_test assumes it.
-    readable_objects  = [ Block ]
+    readable_objects = [Block]
 
     # This class is not able to write objects
-    writeable_objects   = [ ]
+    writeable_objects = []
 
-    has_header         = False
-    is_streameable     = False
+    has_header = False
+    is_streameable = False
 
-    name               = 'Axona'
-    description        = 'This IO reads experimental data from an Axona dataset'
-    extensions         = [ 'set' ]
+    name = 'Axona'
+    description = 'This IO reads experimental data from an Axona dataset'
+    extensions = ['set']
     mode = 'file'
 
-    def __init__(self, filename) :
+    def __init__(self, filename):
         """
         Arguments:
             filename : the filename
@@ -57,19 +59,15 @@ class AxonaIO(BaseIO):
         self._path, relative_filename = os.path.split(filename)
         self._base_filename, extension = os.path.splitext(relative_filename)
 
-        print("Extension:", extension)
-
-
         if extension != ".set":
             raise ValueError("file extension must be '.set'")
 
         # TODO read the set file and store necessary values as attributes on this object
 
     def read_block(self,
-                     lazy=False,
-                     cascade=True,
-                     channel_index=None
-                    ):
+                   lazy=False,
+                   cascade=True,
+                   channel_index=None):
         """
         Arguments:
             Channel_index: can be int, iterable or None to select one, many or all channel(s)
@@ -78,8 +76,8 @@ class AxonaIO(BaseIO):
 
         blk = Block()
         if cascade:
-            seg = Segment( file_origin=self._filename )
-            blk.segments += [ seg ]
+            seg = Segment(file_origin=self._filename)
+            blk.segments += [seg]
 
             if channel_index:
                 if type(channel_index) is int: channel_index = [ channel_index ]
@@ -120,10 +118,9 @@ class AxonaIO(BaseIO):
         pass
 
     def read_analogsignal(self,
-                      channel_index=None,
-                      lazy=False,
-                      cascade=True,
-                      ):
+                          channel_index=None,
+                          lazy=False,
+                          cascade=True):
         """
         Read raw traces
         Arguments:
@@ -141,14 +138,12 @@ class AxonaIO(BaseIO):
             while True:
                 search_string = "data_start"
                 byte = f.read(1)
-                header += str(byte)
+                header += str(byte, 'latin-1')
 
                 if not byte:
                     raise IOError("Hit end of file '" + eeg_filename + "'' before '" + search_string + "' found.")
 
                 if header[-len(search_string):] == search_string:
-                    print("HEADER:")
-                    print(header)
                     break
 
             params = {}
@@ -162,27 +157,26 @@ class AxonaIO(BaseIO):
                 if len(line_splitted) > 1:
                     params[name] = line_splitted[1]
 
-            sample_count = int(params["num_EEG_samples"]) # num_EEG_samples 120250
+            sample_count = int(params["num_EEG_samples"])  # num_EEG_samples 120250
             sample_rate_split = params["sample_rate"].split(" ")
             assert(sample_rate_split[1] == "hz")
-            sample_rate = float(sample_rate_split[0]) * pq.Hz # sample_rate 250.0 hz
-            print(sample_rate)
+            sample_rate = float(sample_rate_split[0]) * pq.Hz  # sample_rate 250.0 hz
 
             if lazy:
                 analog_signal = AnalogSignal([],
-                                             units="uV", # TODO get correct unit
+                                             units="uV",  # TODO get correct unit
                                              sampling_rate=sample_rate)
                 # we add the attribute lazy_shape with the size if loaded
                 # anasig.lazy_shape = self._attrs['shape'][0] # TODO do we need this
                 # TODO Implement lazy loading
             else:
                 data = np.fromfile(f, dtype='int8', count=sample_count)
-                remaining_data = f.read()
+                remaining_data = str(f.read(), 'latin-1')
                 assert(remaining_data == "\r\ndata_end\r\n")
                 # data = self._kwd['recordings'][str(self._dataset)]['data'].value[:, channel_index]
                 # data = data * bit_volts[channel_index]
                 analog_signal = AnalogSignal(data,
-                                             units="uV", # TODO get correct unit
+                                             units="uV",  # TODO get correct unit
                                              sampling_rate=sample_rate)
                 # TODO read start time
             # for attributes out of neo you can annotate
@@ -191,6 +185,6 @@ class AxonaIO(BaseIO):
 
 
 if __name__ == "__main__":
-    print("Test")
-    io = AxonaIO("/home/milad/Dropbox/cinpla-shared/project/axonaio/2012/2012-08/2012-08-31-104220-1199/raw/DVH_2012083105.set")
+    import sys
+    io = AxonaIO(sys.argv[1])
     io.read_analogsignal()
