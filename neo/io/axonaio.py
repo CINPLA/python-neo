@@ -23,6 +23,33 @@ import os
 from future.builtins import str
 
 
+def _parse_header_and_leave_cursor(file_handle):
+    header = ""
+    while True:
+        search_string = "data_start"
+        byte = file_handle.read(1)
+        header += str(byte, 'latin-1')
+
+        if not byte:
+            raise IOError("Hit end of file '" + eeg_filename + "'' before '" + search_string + "' found.")
+
+        if header[-len(search_string):] == search_string:
+            break
+
+    params = {}
+
+    for line in header.split("\r\n"):
+        line_splitted = line.split(" ", 1)
+
+        name = line_splitted[0]
+        params[name] = None
+
+        if len(line_splitted) > 1:
+            params[name] = line_splitted[1]
+
+    return params
+
+
 class AxonaIO(BaseIO):
     """
     Class for "reading" experimental data from an Axona dataset.
@@ -30,15 +57,10 @@ class AxonaIO(BaseIO):
     is_readable = True
     is_writable = False
 
-    supported_objects = [Block, Segment, AnalogSignal, ChannelIndex]
+    supported_objects = [Block, Segment, AnalogSignal, ChannelIndex, SpikeTrain]
 
-    # This class can return either a Block or a Segment
-    # The first one is the default ( self.read )
-    # These lists should go from highest object to lowest object because
-    # common_io_test assumes it.
-    readable_objects = [Block]
+    readable_objects = [Block, SpikeTrain]
 
-    # This class is not able to write objects
     writeable_objects = []
 
     has_header = False
@@ -109,11 +131,43 @@ class AxonaIO(BaseIO):
         # TODO read epoch data
         pass
 
-    def read_spiketrains():
+    def read_spiketrain(self, channel_index=0):
+        assert(SpikeTrain in self.readable_objects)
+        raw_filename = os.path.join(self._path, self._base_filename + "." + str(channel_index + 1))
+        with open(raw_filename, "rb") as f:
+            params = _parse_header_and_leave_cursor(f)
+
+
+            bytes_per_timestamp = int(params.get("bytes_per_timestamp", 4))
+            bytes_per_sample = int(params.get("bytes_per_sample", 1))
+            num_spikes = int(params.get("num_spikes", 0))
+            samples_per_spike = int(params.get("samples_per_spike", 50))
+
+            bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
+            bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
+
+            bits_per_timestamp = bytes_per_timestamp * 8
+            timestamp_dtype = "int" + str(bits_per_timestamp)
+
+            bits_per_sample = bytes_per_sample * 8
+            sample_dtype = "int" + str(bits_per_sample)
+
+            print("Data types:", timestamp_dtype, sample_dtype)
+
+            dtype = np.dtype([("timestamp", (timestamp_dtype, 1), 1), ("samples", (sample_dtype, 1), samples_per_spike)])
+            print("Final dtype", dtype)
+            data = np.fromfile(f, dtype=dtype, count=num_spikes)
+            print(data)
+
+
+
         # TODO read spiketrains from raw data and cut files
         # TODO add parameter to allow user to read raw data or not
         pass
 
+
+
+###########################################################################################
     def read_tracking(self):
 
         # TODO fix for multiple .pos files
@@ -122,31 +176,8 @@ class AxonaIO(BaseIO):
             raise IOError("'.pos' file not found:" + pos_filename)
 
         with open(pos_filename, "rb") as f:
-            header = ""
-            while True:
-                search_string = "data_start"
-                byte = f.read(1)
-                header += str(byte)
-
-                if not byte:
-                    raise IOError("Hit end of file '" + pos_filename + "'' before '" + search_string + "' found.")
-
-                if header[-len(search_string):] == search_string:
-                    print("HEADER:")
-                    print(header)
-                    break
-
-
-            params = {}
-
-            for line in header.split("\r\n"):
-                line_splitted = line.split(" ", 1)
-
-                name = line_splitted[0]
-                params[name] = None
-
-                if len(line_splitted) > 1:
-                    params[name] = line_splitted[1]
+            params = _parse_header_and_leave_cursor(f)
+            print params
 
             sample_rate_split = params["sample_rate"].split(" ")
             assert(sample_rate_split[1] == "hz")
@@ -158,34 +189,30 @@ class AxonaIO(BaseIO):
             bytes_per_coord = int(params["bytes_per_coord"])
             tracked_spots_count = 2 #TODO read this from .set file (tracked_spots_count)
 
+            timestamp_dtype = ">i" + str(bytes_per_timestamp)
+            coord_dtype = "<i" + str(bytes_per_coord)
+
+            bytes_per_pixel_count = 4
+            pixel_count_dtype = ">i"+str(bytes_per_pixel_count)
+
+
             bytes_per_pos = (bytes_per_timestamp + 2*tracked_spots_count*bytes_per_coord + 8)# pos_format is as follows for this file t,x1,y1,x2,y2,numpix1,numpix2.
 
             print(sample_rate, eeg_samples_per_position, pos_samples_count)
 
             #read data:
-            data = np.fromfile(f, dtype='int8', count=pos_samples_count*bytes_per_pos)
+            #TODO: we need two dtype versions, one for one diode and another for two
+            dtype = np.dtype([("t", (timestamp_dtype, 1)),
+            ("r1", (coord_dtype, 1), 2),
+            ("r2", (coord_dtype, 1), 2),
+            ("pixel_count", (pixel_count_dtype, 1), 2)])
+
+            data = np.fromfile(f, dtype=dtype, count=pos_samples_count)
             remaining_data = str(f.read(), 'latin-1')
             assert(remaining_data == "\r\ndata_end\r\n")
 
-            big_endian_vec = 256**np.arange(bytes_per_timestamp)[::-1].reshape(
-                                                -1, bytes_per_timestamp)
-            big_endian_mat = np.array([[256, 256, 256, 256], [1,1,1,1]])
+            print data
 
-            t_values = np.zeros(pos_samples_count)
-            x_values  = np.zeros((pos_samples_count, tracked_spots_count))
-            y_values  = np.zeros((pos_samples_count, tracked_spots_count))
-
-            for i in range(pos_samples_count):
-                pos_offset = i*bytes_per_pos
-                t_bytes = data[pos_offset:pos_offset + bytes_per_timestamp]
-                pos_offset += bytes_per_timestamp
-                c_bytes=data[pos_offset:pos_offset+2*tracked_spots_count*bytes_per_coord].reshape(-1, bytes_per_coord).T
-                coords = (c_bytes * big_endian_mat).sum(axis=0)
-
-                #fill in values
-                t_values[i] = (t_bytes * big_endian_vec).sum()
-                x_values[i, ] = coords[::2]
-                y_values[i, ] = coords[1::2]
 
 
 
@@ -209,28 +236,7 @@ class AxonaIO(BaseIO):
             raise IOError("'.eeg' file not found:" + eeg_filename)
 
         with open(eeg_filename, "rb") as f:
-            header = ""
-            while True:
-                search_string = "data_start"
-                byte = f.read(1)
-                header += str(byte, 'latin-1')
-
-                if not byte:
-                    raise IOError("Hit end of file '" + eeg_filename + "'' before '" + search_string + "' found.")
-
-                if header[-len(search_string):] == search_string:
-                    break
-
-            params = {}
-
-            for line in header.split("\r\n"):
-                line_splitted = line.split(" ", 1)
-
-                name = line_splitted[0]
-                params[name] = None
-
-                if len(line_splitted) > 1:
-                    params[name] = line_splitted[1]
+            params = _parse_header_and_leave_cursor(f)
 
             sample_count = int(params["num_EEG_samples"])  # num_EEG_samples 120250
             sample_rate_split = params["sample_rate"].split(" ")
@@ -263,4 +269,6 @@ if __name__ == "__main__":
     import sys
     io = AxonaIO(sys.argv[1])
     # io.read_analogsignal()
+    # io.read_spiketrain()
+    # io.read_spiketrainlist()
     io.read_tracking()
