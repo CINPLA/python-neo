@@ -200,42 +200,32 @@ class AxonaIO(BaseIO):
                 if len(line_splitted) > 1:
                     params[name] = line_splitted[1]
 
-            sample_count = int(params["num_EEG_samples"])
-            print(sample_count)
-            analog_signal = np.fromfile(f, dtype='int8', count=sample_count)
-            remaining_data = f.read()
-            assert(remaining_data == "\r\ndata_end\r\n")
+            sample_count = int(params["num_EEG_samples"]) # num_EEG_samples 120250
+            sample_rate_split = params["sample_rate"].split(" ")
+            assert(sample_rate_split[1] == "hz")
+            sample_rate = float(sample_rate_split[0]) * pq.Hz # sample_rate 250.0 hz
+            print(sample_rate)
 
-        # if self._attrs['app_data']:
-        #     bit_volts = self._attrs['app_data']['channel_bit_volts']
-        #     sig_unit = 'uV'
-        # else:
-        #     bit_volts = np.ones((self._attrs['shape'][1])) # TODO: find conversion in phy generated files
-        #     sig_unit =  'bit'
-        if lazy:
-            # anasig = AnalogSignal([],
-            #                       units=sig_unit,
-            #                       sampling_rate=self._attrs['kwik']['sample_rate']*pq.Hz,
-            #                       t_start=self._attrs['kwik']['start_time']*pq.s,
-            #                       )
-            # # we add the attribute lazy_shape with the size if loaded
-            # anasig.lazy_shape = self._attrs['shape'][0]
-            # TODO Implement lazy loading
-            pass
-        else:
-            # data = self._kwd['recordings'][str(self._dataset)]['data'].value[:, channel_index]
-            # data = data * bit_volts[channel_index]
-            # anasig = AnalogSignal(data,
-            #                            units=sig_unit,
-            #                            sampling_rate=self._attrs['kwik']['sample_rate']*pq.Hz,
-            #                            t_start=self._attrs['kwik']['start_time']*pq.s,
-            #                            )
-            # data = []  # delete from memory
-            # TODO Read the data from the file
-            pass
-        # for attributes out of neo you can annotate
-        # anasig.annotate(info='raw traces')
-        # return anasig
+            if lazy:
+                analog_signal = AnalogSignal([],
+                                             units="uV", # TODO get correct unit
+                                             sampling_rate=sample_rate)
+                # we add the attribute lazy_shape with the size if loaded
+                # anasig.lazy_shape = self._attrs['shape'][0]
+                # TODO Implement lazy loading
+            else:
+                data = np.fromfile(f, dtype='int8', count=sample_count)
+                remaining_data = f.read()
+                assert(remaining_data == "\r\ndata_end\r\n")
+                # data = self._kwd['recordings'][str(self._dataset)]['data'].value[:, channel_index]
+                # data = data * bit_volts[channel_index]
+                analog_signal = AnalogSignal(data,
+                                             units="uV", # TODO get correct unit
+                                             sampling_rate=sample_rate)
+                # TODO read start time
+            # for attributes out of neo you can annotate
+            # anasig.annotate(info='raw traces')
+            return analog_signal
 
 
 if __name__ == "__main__":
