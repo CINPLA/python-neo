@@ -59,7 +59,9 @@ class AxonaIO(BaseIO):
 
         print("Extension:", extension)
 
-        assert(extension == ".set") # TODO more friendly error message?
+
+        if extension != ".set":
+            raise ValueError("file extension must be '.set'")
 
         # TODO read the set file and store necessary values as attributes on this object
 
@@ -128,7 +130,81 @@ class AxonaIO(BaseIO):
             channel_index: must be integer array
         """
 
-        # TODO check that .eeg or .egf file exists
+        # TODO check that .egf file exists
+
+        eeg_filename = os.path.join(self._path, self._base_filename+".eeg")
+        if not os.path.exists(eeg_filename):
+            raise IOError("'.eeg' file not found:" + eeg_filename)
+
+
+        # f = open(eeg_filename, 'r')
+        #
+        # skip_character_count = 0
+        #
+        # for line in f:
+        #     data_start = "data_start"
+        #     if line[0:len(data_start)]==data_start:
+        #         skip_character_count += len(data_start)
+        #         break
+        #
+        #     print(line)
+        #     skip_character_count += len(line)
+        #
+        #     line_stripped = line.strip()
+        #     line_splitted = line_stripped.split(" ", 1)
+        #
+        #     name = line_splitted[0]
+        #     value = ""
+        #
+        #     if len(line_splitted) > 1:
+        #         value = line_splitted[1]
+        #
+        #     if name=="num_EEG_samples":
+        #         sample_count = int(value)
+        #         print(sample_count)
+        #
+        # f.close()
+        #
+        # with open(eeg_filename, "rb") as f:
+        #     f.seek(skip_character_count)
+        #     analog_signal = np.fromfile(f, dtype='int8', count=sample_count)
+        #     remaining_data = f.read()
+        #     assert(remaining_data == "\r\ndata_end\r\n")
+        #
+        # print(analog_signal)
+
+        with open(eeg_filename, "rb") as f:
+
+            header = ""
+            while True:
+                search_string = "data_start"
+                byte = f.read(1)
+                header += str(byte)
+
+                if not byte:
+                    raise IOError("Hit end of file '" + eeg_filename + "'' before '" + search_string + "' found.")
+
+                if header[-len(search_string):] == search_string:
+                    print("HEADER:")
+                    print(header)
+                    break
+
+            params = {}
+
+            for line in header.split("\r\n"):
+                line_splitted = line.split(" ", 1)
+
+                name = line_splitted[0]
+                params[name] = None
+
+                if len(line_splitted) > 1:
+                    params[name] = line_splitted[1]
+
+            sample_count = int(params["num_EEG_samples"])
+            print(sample_count)
+            analog_signal = np.fromfile(f, dtype='int8', count=sample_count)
+            remaining_data = f.read()
+            assert(remaining_data == "\r\ndata_end\r\n")
 
         # if self._attrs['app_data']:
         #     bit_volts = self._attrs['app_data']['channel_bit_volts']
@@ -164,5 +240,5 @@ class AxonaIO(BaseIO):
 
 if __name__ == "__main__":
     print("Test")
-    io = AxonaIO("/tmp/2012/2012-08/2012-08-31-104220-1199/raw/DVH_2012083105.set")
+    io = AxonaIO("/home/milad/Dropbox/cinpla-shared/project/axonaio/2012/2012-08/2012-08-31-104220-1199/raw/DVH_2012083105.set")
     io.read_analogsignal()
