@@ -14,20 +14,17 @@ from __future__ import print_function
 from __future__ import with_statement
 
 import sys
-python_version = sys.version_info.major
-if python_version == 2:
-    from future.builtins import str
-
-# I need to subclass BaseIO
 from neo.io.baseio import BaseIO
-
-# to import from core
 from neo.core import (Segment, SpikeTrain, Unit, Epoch, AnalogSignal,
                       ChannelIndex, Block)
 import neo.io.tools
 import numpy as np
 import quantities as pq
 import os
+
+python_version = sys.version_info.major
+if python_version == 2:
+    from future.builtins import str
 
 
 def _parse_header_and_leave_cursor(file_handle):
