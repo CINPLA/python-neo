@@ -9,6 +9,15 @@ Supported: Read
 Authors: Mikkel E. Lepperød @CINPLA, Milad H. Mobarhan @CINPLA, Svenn-Arne Dragly @CINPLA
 """
 
+from __future__ import division
+from __future__ import print_function
+from __future__ import with_statement
+
+import sys
+python_version = sys.version_info.major
+if python_version == 2:
+    from future.builtins import str
+
 # I need to subclass BaseIO
 from neo.io.baseio import BaseIO
 
@@ -44,7 +53,7 @@ def _parse_header_and_leave_cursor(file_handle):
 
         if len(line_splitted) > 1:
             params[name] = line_splitted[1]
-    
+
     return params
 
 
@@ -135,13 +144,14 @@ class AxonaIO(BaseIO):
         raw_filename = os.path.join(self._path, self._base_filename + "." + str(tetrode_index + 1))
         with open(raw_filename, "rb") as f:
             params = _parse_header_and_leave_cursor(f)
-            
+
+
             bytes_per_timestamp = int(params.get("bytes_per_timestamp", 4))
             bytes_per_sample = int(params.get("bytes_per_sample", 1))
             num_spikes = int(params.get("num_spikes", 0))
             num_chans = int(params.get("num_chans", 1))
             samples_per_spike = int(params.get("samples_per_spike", 50))
-            
+
             bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
             bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
             
@@ -165,11 +175,49 @@ class AxonaIO(BaseIO):
                                  waveforms=waveforms)
                                      
         return spike_train
+        
+    def read_tracking(self):
+        # TODO fix for multiple .pos files
+        pos_filename = os.path.join(self._path, self._base_filename+".pos")
+        if not os.path.exists(pos_filename):
+            raise IOError("'.pos' file not found:" + pos_filename)
 
-    def read_tracking():
-        # TODO read tracking
-        # TODO nag about this missing function
-        pass
+        with open(pos_filename, "rb") as f:
+            params = _parse_header_and_leave_cursor(f)
+            print(params)
+
+            sample_rate_split = params["sample_rate"].split(" ")
+            assert(sample_rate_split[1] == "hz")
+            sample_rate = float(sample_rate_split[0]) * pq.Hz  # sample_rate 50.0 hz
+
+            eeg_samples_per_position = float(params["EEG_samples_per_position"])  # TODO remove?
+            pos_samples_count = int(params["num_pos_samples"])
+            bytes_per_timestamp = int(params["bytes_per_timestamp"])
+            bytes_per_coord = int(params["bytes_per_coord"])
+            tracked_spots_count = 2  # TODO read this from .set file (tracked_spots_count)
+
+            timestamp_dtype = ">i" + str(bytes_per_timestamp)
+            coord_dtype = "<i" + str(bytes_per_coord)
+
+            bytes_per_pixel_count = 4
+            pixel_count_dtype = ">i"+str(bytes_per_pixel_count)
+
+            bytes_per_pos = (bytes_per_timestamp + 2*tracked_spots_count*bytes_per_coord + 8)  # pos_format is as follows for this file t,x1,y1,x2,y2,numpix1,numpix2.
+
+            print(sample_rate, eeg_samples_per_position, pos_samples_count)
+
+            # read data:
+            # TODO: we need two dtype versions, one for one diode and another for two
+            dtype = np.dtype([("t", (timestamp_dtype, 1)),
+                              ("r1", (coord_dtype, 1), 2),
+                              ("r2", (coord_dtype, 1), 2),
+                              ("pixel_count", (pixel_count_dtype, 1), 2)])
+
+            data = np.fromfile(f, dtype=dtype, count=pos_samples_count)
+            remaining_data = str(f.read(), 'latin-1')
+            assert(remaining_data == "\r\ndata_end\r\n")
+
+            print(data)
 
     def read_analogsignal(self,
                           channel_index=None,
@@ -223,3 +271,4 @@ if __name__ == "__main__":
     io.read_analogsignal()
     io.read_spiketrain()
     # io.read_spiketrainlist()
+    io.read_tracking()
