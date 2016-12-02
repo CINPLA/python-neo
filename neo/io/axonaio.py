@@ -130,6 +130,7 @@ class AxonaIO(BaseIO):
         pass
 
     def read_spiketrain(self, tetrode_index=0):
+        # TODO add parameter to allow user to read raw data or not?
         assert(SpikeTrain in self.readable_objects)
         raw_filename = os.path.join(self._path, self._base_filename + "." + str(tetrode_index + 1))
         with open(raw_filename, "rb") as f:
@@ -153,17 +154,17 @@ class AxonaIO(BaseIO):
             remaining_data = str(f.read(), 'latin1')
             assert(remaining_data == "\r\ndata_end\r\n")
             
-            times = data["times"]
-            waveforms = data["waveforms"]
-            # TODO ensure waveforms is properly reshaped
-            waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
-            
-            # TODO get proper units
-            # TODO get proper t_stop
-            spike_train = SpikeTrain(times, units="ms", t_stop=times[-1],
-                                     waveforms=waveforms)
-            
-        # TODO add parameter to allow user to read raw data or not?
+        times = data["times"]
+        waveforms = data["waveforms"]
+        # TODO ensure waveforms is properly reshaped
+        waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
+        
+        # TODO get proper units
+        # TODO get proper t_stop
+        spike_train = SpikeTrain(times, units="ms", t_stop=times[-1],
+                                 waveforms=waveforms)
+                                     
+        return spike_train
 
     def read_tracking():
         # TODO read tracking
