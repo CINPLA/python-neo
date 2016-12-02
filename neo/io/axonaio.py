@@ -68,7 +68,13 @@ def parse_header_and_leave_cursor(file_handle):
 def assert_end_of_data(file_handle):
     remaining_data = str(file_handle.read(), 'latin1')
     assert(remaining_data.strip() == "data_end")
+    
 
+def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
+    max_value = 2**(8 * bytes_per_sample - 1) - 1
+    # TODO this might need to be mapped as [0, 127] -> [0, 1] and [-128, 0] -> [-1, 0]
+    return (value / max_value) * (adc_fullscale_mv / gain) * 1000
+    
 
 class AxonaIO(BaseIO):
     """
@@ -109,10 +115,18 @@ class AxonaIO(BaseIO):
         with open(self._absolute_filename, "r") as f:
             text = f.read()
             
-        self._params = parse_params(text)
-        print(self._params)
+        params = parse_params(text)
+        
+        self._adc_fullscale_mv = float(params["ADC_fullscale_mv"])
+        self._duration = float(params["duration"])
+        self._params = params
 
         # TODO read the set file and store necessary values as attributes on this object
+        
+    def _channel_gain(self, tetrode_index, channel_index):
+        global_channel_index = tetrode_index * 4 + channel_index
+        param_name = "gain_ch_" + str(global_channel_index)
+        return float(self._params[param_name])
 
     def read_block(self,
                    lazy=False,
@@ -169,6 +183,7 @@ class AxonaIO(BaseIO):
             num_spikes = int(params.get("num_spikes", 0))
             num_chans = int(params.get("num_chans", 1))
             samples_per_spike = int(params.get("samples_per_spike", 50))
+            timebase = int(params.get("samples_per_spike", "96000 hz").split(" ")[0]) * pq.Hz
 
             bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
             bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
@@ -181,14 +196,18 @@ class AxonaIO(BaseIO):
             data = np.fromfile(f, dtype=dtype, count=num_spikes * num_chans)
             assert_end_of_data(f)
             
-        times = data["times"]
+        times = data["times"] / timebase  # seconds because timebase is in Hz
         waveforms = data["waveforms"]
         # TODO ensure waveforms is properly reshaped
         waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
+        waveforms = waveforms.astype(float)
+        
+        for i in range(0, num_chans):
+            waveforms[:, i, :] = scale_analog_signal(waveforms[:, i, :], self._channel_gain(tetrode_index, i), self._adc_fullscale_mv, bytes_per_sample)
         
         # TODO get proper units
         # TODO get proper t_stop
-        spike_train = SpikeTrain(times, units="ms", t_stop=times[-1],
+        spike_train = SpikeTrain(times, t_stop=times[-1],
                                  waveforms=waveforms)
                                      
         return spike_train
