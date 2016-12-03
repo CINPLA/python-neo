@@ -71,9 +71,16 @@ def assert_end_of_data(file_handle):
     
 
 def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
+    if type(value) is np.ndarray and value.base is not None:
+        raise ValueError("Value passed to scale_analog_signal cannot be a numpy view because we need to convert the entire array to a quantity.")
+    # TODO this is [-0.5, 0.5] mapped to [-127, 127]. Should it rather be [-128, 127]
+    
     max_value = 2**(8 * bytes_per_sample - 1) - 1
-    # TODO this might need to be mapped as [0, 127] -> [0, 1] and [-128, 0] -> [-1, 0]
-    return (value / max_value) * (adc_fullscale_mv / gain) * 1000
+    # TODO adc_fullscale_mv has been reported to both mean [-1500, 1500] and [-750, 750], please check this and set `adc_max_value = adc_fullscale_mv / 2` if the range should be [-750, 750]
+    adc_max_value = adc_fullscale_mv
+    result = (value / max_value) * (adc_max_value / gain)
+    result = result * pq.V
+    return result
     
 
 class AxonaIO(BaseIO):
@@ -138,34 +145,33 @@ class AxonaIO(BaseIO):
 
         """
 
-        blk = Block()
-        if cascade:
-            seg = Segment(file_origin=self._filename)
-            blk.segments += [seg]
+        # blk = Block()
+        # if cascade:
+            # seg = Segment(file_origin=self._filename)
+            # blk.segments += [seg]
 
-            if channel_index:
-                if type(channel_index) is int: channel_index = [ channel_index ]
-                if type(channel_index) is list: channel_index = np.array( channel_index )
-            else:
-                channel_index = np.arange(0,self._attrs['shape'][1])
+            # if channel_index:
+                # if type(channel_index) is int: channel_index = [ channel_index ]
+                # if type(channel_index) is list: channel_index = np.array( channel_index )
+            # else:
+                # channel_index = np.arange(0,self._attrs['shape'][1])
 
-            chx = ChannelIndex(name='all channels',
-                               index=channel_index)
-            blk.channel_indexes.append(chx)
+            # chx = ChannelIndex(name='all channels',
+                            #    index=channel_index)
+            # blk.channel_indexes.append(chx)
 
-            ana = self.read_analogsignal(channel_index=channel_index,
-                                         lazy=lazy,
-                                         cascade=cascade)
+            # ana = self.read_analogsignal(channel_index=channel_index,
+                                        #  lazy=lazy,
+                                        #  cascade=cascade)
 
             # TODO Call all other read functions
 
-            ana.channel_index = chx
-            seg.duration = (self._attrs['shape'][0]
-                          / self._attrs['kwik']['sample_rate']) * pq.s
+            # ana.channel_index = chx
+            # seg.duration = (self._attrs['shape'][0] / self._attrs['kwik']['sample_rate']) * pq.s
 
             # neo.tools.populate_RecordingChannel(blk)
-        blk.create_many_to_one_relationship()
-        return blk
+        # blk.create_many_to_one_relationship()
+        # return blk
 
     def read_epoch():
         # TODO read epoch data
@@ -202,10 +208,15 @@ class AxonaIO(BaseIO):
         waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
         waveforms = waveforms.astype(float)
         
-        for i in range(0, num_chans):
-            waveforms[:, i, :] = scale_analog_signal(waveforms[:, i, :], self._channel_gain(tetrode_index, i), self._adc_fullscale_mv, bytes_per_sample)
+        channel_gain_matrix = np.ones(waveforms.shape)
+        for i in range(num_chans):
+            channel_gain_matrix[:, i, :] *= self._channel_gain(tetrode_index, i)
         
-        # TODO get proper units
+        waveforms = scale_analog_signal(waveforms, 
+                                        channel_gain_matrix,
+                                        self._adc_fullscale_mv, 
+                                        bytes_per_sample)
+
         # TODO get proper t_stop
         spike_train = SpikeTrain(times, t_stop=times[-1],
                                  waveforms=waveforms)
