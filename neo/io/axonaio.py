@@ -71,15 +71,20 @@ def assert_end_of_data(file_handle):
     
 
 def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
+    """
+    Takes value as raw sample data and converts it to millivolts quantity.
+    
+    The mapping in the case of bytes_per_sample = 1 is
+    
+        [-128, 127] -> [-1.0, (127.0/128.0)] * adc_fullscale_mv / gain (mV)
+    
+    The correctness of this mapping has been verified by contacting Axona.
+    """
     if type(value) is np.ndarray and value.base is not None:
         raise ValueError("Value passed to scale_analog_signal cannot be a numpy view because we need to convert the entire array to a quantity.")
-    # TODO this is [-0.5, 0.5] mapped to [-127, 127]. Should it rather be [-128, 127]
-    
-    max_value = 2**(8 * bytes_per_sample - 1) - 1
-    # TODO adc_fullscale_mv has been reported to both mean [-1500, 1500] and [-750, 750], please check this and set `adc_max_value = adc_fullscale_mv / 2` if the range should be [-750, 750]
-    adc_max_value = adc_fullscale_mv
-    result = (value / max_value) * (adc_max_value / gain)
-    result = result * pq.V
+    max_value = 2**(8 * bytes_per_sample - 1) # 128 when bytes_per_sample = 1
+    result = (value / max_value) * (adc_fullscale_mv / gain)
+    result = result * pq.mV
     return result
     
 
