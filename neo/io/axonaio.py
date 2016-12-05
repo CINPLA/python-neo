@@ -9,10 +9,12 @@ Supported: Read
 Authors: Mikkel E. Lepperød @CINPLA, Milad H. Mobarhan @CINPLA, Svenn-Arne Dragly @CINPLA
 """
 
-# I need to subclass BaseIO
-from neo.io.baseio import BaseIO
+from __future__ import division
+from __future__ import print_function
+from __future__ import with_statement
 
-# to import from core
+import sys
+from neo.io.baseio import BaseIO
 from neo.core import (Segment, SpikeTrain, Unit, Epoch, AnalogSignal,
                       ChannelIndex, Block)
 import neo.io.tools
@@ -20,10 +22,32 @@ import numpy as np
 import quantities as pq
 import os
 
-from future.builtins import str
+python_version = sys.version_info.major
+if python_version == 2:
+    from future.builtins import str
 
 
-def _parse_header_and_leave_cursor(file_handle):
+def parse_params(text):
+    params = {}
+
+    for line in text.split("\n"):
+        line = line.strip()
+        
+        if len(line) == 0:
+            continue
+            
+        line_splitted = line.split(" ", 1)
+        
+        name = line_splitted[0]
+        params[name] = None
+
+        if len(line_splitted) > 1:
+            params[name] = line_splitted[1]
+            
+    return params
+
+
+def parse_header_and_leave_cursor(file_handle):
     header = ""
     while True:
         search_string = "data_start"
@@ -35,20 +59,34 @@ def _parse_header_and_leave_cursor(file_handle):
 
         if header[-len(search_string):] == search_string:
             break
-
-    params = {}
-
-    for line in header.split("\r\n"):
-        line_splitted = line.split(" ", 1)
-
-        name = line_splitted[0]
-        params[name] = None
-
-        if len(line_splitted) > 1:
-            params[name] = line_splitted[1]
+            
+    params = parse_params(header)
 
     return params
+    
 
+def assert_end_of_data(file_handle):
+    remaining_data = str(file_handle.read(), 'latin1')
+    assert(remaining_data.strip() == "data_end")
+    
+
+def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
+    """
+    Takes value as raw sample data and converts it to millivolts quantity.
+    
+    The mapping in the case of bytes_per_sample = 1 is
+    
+        [-128, 127] -> [-1.0, (127.0/128.0)] * adc_fullscale_mv / gain (mV)
+    
+    The correctness of this mapping has been verified by contacting Axona.
+    """
+    if type(value) is np.ndarray and value.base is not None:
+        raise ValueError("Value passed to scale_analog_signal cannot be a numpy view because we need to convert the entire array to a quantity.")
+    max_value = 2**(8 * bytes_per_sample - 1) # 128 when bytes_per_sample = 1
+    result = (value / max_value) * (adc_fullscale_mv / gain)
+    result = result * pq.mV
+    return result
+    
 
 class AxonaIO(BaseIO):
     """
@@ -85,8 +123,22 @@ class AxonaIO(BaseIO):
 
         if extension != ".set":
             raise ValueError("file extension must be '.set'")
+            
+        with open(self._absolute_filename, "r") as f:
+            text = f.read()
+            
+        params = parse_params(text)
+        
+        self._adc_fullscale_mv = float(params["ADC_fullscale_mv"])
+        self._duration = float(params["duration"])
+        self._params = params
 
         # TODO read the set file and store necessary values as attributes on this object
+        
+    def _channel_gain(self, tetrode_index, channel_index):
+        global_channel_index = tetrode_index * 4 + channel_index
+        param_name = "gain_ch_" + str(global_channel_index)
+        return float(self._params[param_name])
 
     def read_block(self,
                    lazy=False,
@@ -98,93 +150,103 @@ class AxonaIO(BaseIO):
 
         """
 
-        blk = Block()
-        if cascade:
-            seg = Segment(file_origin=self._filename)
-            blk.segments += [seg]
+        # blk = Block()
+        # if cascade:
+            # seg = Segment(file_origin=self._filename)
+            # blk.segments += [seg]
 
-            if channel_index:
-                if type(channel_index) is int: channel_index = [ channel_index ]
-                if type(channel_index) is list: channel_index = np.array( channel_index )
-            else:
-                channel_index = np.arange(0,self._attrs['shape'][1])
+            # if channel_index:
+                # if type(channel_index) is int: channel_index = [ channel_index ]
+                # if type(channel_index) is list: channel_index = np.array( channel_index )
+            # else:
+                # channel_index = np.arange(0,self._attrs['shape'][1])
 
-            chx = ChannelIndex(name='all channels',
-                               index=channel_index)
-            blk.channel_indexes.append(chx)
+            # chx = ChannelIndex(name='all channels',
+                            #    index=channel_index)
+            # blk.channel_indexes.append(chx)
 
-            ana = self.read_analogsignal(channel_index=channel_index,
-                                         lazy=lazy,
-                                         cascade=cascade)
+            # ana = self.read_analogsignal(channel_index=channel_index,
+                                        #  lazy=lazy,
+                                        #  cascade=cascade)
 
             # TODO Call all other read functions
 
-            ana.channel_index = chx
-            seg.duration = (self._attrs['shape'][0]
-                          / self._attrs['kwik']['sample_rate']) * pq.s
+            # ana.channel_index = chx
+            # seg.duration = (self._attrs['shape'][0] / self._attrs['kwik']['sample_rate']) * pq.s
 
             # neo.tools.populate_RecordingChannel(blk)
-        blk.create_many_to_one_relationship()
-        return blk
+        # blk.create_many_to_one_relationship()
+        # return blk
 
     def read_epoch():
         # TODO read epoch data
         pass
 
-    def read_spiketrain(self, channel_index=0):
+    def read_spiketrain(self, tetrode_index=0):
+        # TODO add parameter to allow user to read raw data or not?
         assert(SpikeTrain in self.readable_objects)
-        raw_filename = os.path.join(self._path, self._base_filename + "." + str(channel_index + 1))
+        raw_filename = os.path.join(self._path, self._base_filename + "." + str(tetrode_index + 1))
         with open(raw_filename, "rb") as f:
-            params = _parse_header_and_leave_cursor(f)
-
+            params = parse_header_and_leave_cursor(f)
 
             bytes_per_timestamp = int(params.get("bytes_per_timestamp", 4))
             bytes_per_sample = int(params.get("bytes_per_sample", 1))
             num_spikes = int(params.get("num_spikes", 0))
+            num_chans = int(params.get("num_chans", 1))
             samples_per_spike = int(params.get("samples_per_spike", 50))
+            timebase = int(params.get("samples_per_spike", "96000 hz").split(" ")[0]) * pq.Hz
 
             bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
             bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
+            
+            timestamp_dtype = ">u" + str(bytes_per_timestamp)
+            waveform_dtype = "<i" + str(bytes_per_sample)            
+            
+            dtype = np.dtype([("times", (timestamp_dtype, 1), 1), ("waveforms", (waveform_dtype, 1), samples_per_spike)])
+            
+            data = np.fromfile(f, dtype=dtype, count=num_spikes * num_chans)
+            assert_end_of_data(f)
+            
+        times = data["times"] / timebase  # seconds because timebase is in Hz
+        waveforms = data["waveforms"]
+        # TODO ensure waveforms is properly reshaped
+        waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
+        waveforms = waveforms.astype(float)
+        
+        channel_gain_matrix = np.ones(waveforms.shape)
+        for i in range(num_chans):
+            channel_gain_matrix[:, i, :] *= self._channel_gain(tetrode_index, i)
+        
+        waveforms = scale_analog_signal(waveforms, 
+                                        channel_gain_matrix,
+                                        self._adc_fullscale_mv, 
+                                        bytes_per_sample)
 
-
-            timestamp_dtype = "<i" + str(bytes_per_timestamp)
-
-            sample_dtype = "<i" + str(bytes_per_sample)
-
-            dtype = np.dtype([("timestamp", (timestamp_dtype, 1), 1), ("samples", (sample_dtype, 1), samples_per_spike)])
-            print("Final dtype", dtype)
-            data = np.fromfile(f, dtype=dtype, count=num_spikes)
-            print(data)
-
-
-
-        # TODO read spiketrains from raw data and cut files
-        # TODO add parameter to allow user to read raw data or not
-        pass
-
-
-
-###########################################################################################
+        # TODO get proper t_stop
+        spike_train = SpikeTrain(times, t_stop=times[-1],
+                                 waveforms=waveforms)
+                                     
+        return spike_train
+        
     def read_tracking(self):
-
         # TODO fix for multiple .pos files
         pos_filename = os.path.join(self._path, self._base_filename+".pos")
         if not os.path.exists(pos_filename):
             raise IOError("'.pos' file not found:" + pos_filename)
 
         with open(pos_filename, "rb") as f:
-            params = _parse_header_and_leave_cursor(f)
-            print params
+            params = parse_header_and_leave_cursor(f)
+            print(params)
 
             sample_rate_split = params["sample_rate"].split(" ")
             assert(sample_rate_split[1] == "hz")
-            sample_rate = float(sample_rate_split[0]) * pq.Hz # sample_rate 50.0 hz
+            sample_rate = float(sample_rate_split[0]) * pq.Hz  # sample_rate 50.0 hz
 
-            eeg_samples_per_position = float(params["EEG_samples_per_position"]) #TODO remove?
+            eeg_samples_per_position = float(params["EEG_samples_per_position"])  # TODO remove?
             pos_samples_count = int(params["num_pos_samples"])
             bytes_per_timestamp = int(params["bytes_per_timestamp"])
             bytes_per_coord = int(params["bytes_per_coord"])
-            tracked_spots_count = 2 #TODO read this from .set file (tracked_spots_count)
+            tracked_spots_count = 2  # TODO read this from .set file (tracked_spots_count)
 
             timestamp_dtype = ">i" + str(bytes_per_timestamp)
             coord_dtype = "<i" + str(bytes_per_coord)
@@ -192,29 +254,21 @@ class AxonaIO(BaseIO):
             bytes_per_pixel_count = 4
             pixel_count_dtype = ">i"+str(bytes_per_pixel_count)
 
-
-            bytes_per_pos = (bytes_per_timestamp + 2*tracked_spots_count*bytes_per_coord + 8)# pos_format is as follows for this file t,x1,y1,x2,y2,numpix1,numpix2.
+            bytes_per_pos = (bytes_per_timestamp + 2*tracked_spots_count*bytes_per_coord + 8)  # pos_format is as follows for this file t,x1,y1,x2,y2,numpix1,numpix2.
 
             print(sample_rate, eeg_samples_per_position, pos_samples_count)
 
-            #read data:
-            #TODO: we need two dtype versions, one for one diode and another for two
+            # read data:
+            # TODO: we need two dtype versions, one for one diode and another for two
             dtype = np.dtype([("t", (timestamp_dtype, 1)),
-            ("r1", (coord_dtype, 1), 2),
-            ("r2", (coord_dtype, 1), 2),
-            ("pixel_count", (pixel_count_dtype, 1), 2)])
+                              ("r1", (coord_dtype, 1), 2),
+                              ("r2", (coord_dtype, 1), 2),
+                              ("pixel_count", (pixel_count_dtype, 1), 2)])
 
             data = np.fromfile(f, dtype=dtype, count=pos_samples_count)
-            remaining_data = str(f.read(), 'latin-1')
-            assert(remaining_data == "\r\ndata_end\r\n")
+            assert_end_of_data(f)
 
-            print data
-
-
-
-
-###########################################################################################
-
+            print(data)
 
     def read_analogsignal(self,
                           channel_index=None,
@@ -233,7 +287,7 @@ class AxonaIO(BaseIO):
             raise IOError("'.eeg' file not found:" + eeg_filename)
 
         with open(eeg_filename, "rb") as f:
-            params = _parse_header_and_leave_cursor(f)
+            params = parse_header_and_leave_cursor(f)
 
             sample_count = int(params["num_EEG_samples"])  # num_EEG_samples 120250
             sample_rate_split = params["sample_rate"].split(" ")
@@ -249,8 +303,7 @@ class AxonaIO(BaseIO):
                 # TODO Implement lazy loading
             else:
                 data = np.fromfile(f, dtype='int8', count=sample_count)
-                remaining_data = str(f.read(), 'latin-1')
-                assert(remaining_data == "\r\ndata_end\r\n")
+                assert_end_of_data(f)
                 # data = self._kwd['recordings'][str(self._dataset)]['data'].value[:, channel_index]
                 # data = data * bit_volts[channel_index]
                 analog_signal = AnalogSignal(data,
