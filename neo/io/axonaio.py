@@ -342,14 +342,21 @@ class AxonaIO(BaseIO):
         eeg_basename = os.path.join(self._path, self._base_filename)
         eeg_files = glob.glob(eeg_basename + ".eeg")
         eeg_files += glob.glob(eeg_basename + ".eeg[0-9]*")
+        eeg_files += glob.glob(eeg_basename + ".egf")
+        eeg_files += glob.glob(eeg_basename + ".egf[0-9]*")
         for eeg_filename in sorted(eeg_files):
+            file_type = eeg_filename.split(".")[-1][:3]
             with open(eeg_filename, "rb") as f:
                 params = parse_header_and_leave_cursor(f)
-
-                sample_count = int(params["num_EEG_samples"])  # num_EEG_samples 120250
+                if file_type == "eeg":
+                    sample_count = int(params["num_EEG_samples"])
+                elif file_type == "egf":
+                    sample_count = int(params["num_EGF_samples"])
+                else:
+                    raise IOError("Unknown file type. Should be .eeg or .efg.")
                 sample_rate_split = params["sample_rate"].split(" ")
                 bytes_per_sample = params["bytes_per_sample"]
-                assert(sample_rate_split[1] == "hz")
+                assert(sample_rate_split[1].lower() == "hz")
                 sample_rate = float(sample_rate_split[0]) * pq.Hz  # sample_rate 250.0 hz
 
                 if lazy:
@@ -367,6 +374,7 @@ class AxonaIO(BaseIO):
                     signal = scale_analog_signal(data, 1.0, 1.0, 1.0) # TODO proper scaling
                     # data = self._kwd['recordings'][str(self._dataset)]['data'].value[:, channel_index]
                     # data = data * bit_volts[channel_index]
+                    # TODO Add channel index
                     analog_signal = AnalogSignal(signal,
                                                  units="uV",  # TODO get correct unit
                                                  sampling_rate=sample_rate,
