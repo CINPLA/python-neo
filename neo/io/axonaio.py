@@ -265,7 +265,7 @@ class AxonaIO(BaseIO):
 if __name__ == "__main__":
     import sys
     io = AxonaIO(sys.argv[1])
-    io.read_analogsignal()
-    io.read_spiketrain()
+    # io.read_analogsignal()
+    # io.read_spiketrain()
     # io.read_spiketrainlist()
     io.read_tracking()
