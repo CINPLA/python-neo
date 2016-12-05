@@ -44,14 +44,14 @@ def parse_params(text):
         params[name] = None
 
         if len(line_splitted) > 1:
-            # Try to convert to int, float or keep as string
-            try:
-                params[name] = int(line_splitted[1])
-            except:
-                try: 
-                    params[name] = float(line_splitted[1])
-                except:
-                    params[name] = line_splitted[1]
+        #     # Try to convert to int, float or keep as string
+        #     try:
+        #         params[name] = int(line_splitted[1])
+        #     except:
+        #         try: 
+        #             params[name] = float(line_splitted[1])
+        #         except:
+            params[name] = line_splitted[1]
             
     return params
 
@@ -161,7 +161,7 @@ class AxonaIO(BaseIO):
 
         # blk = Block()
         # if cascade:
-        #     seg = Segment(file_origin=self._filename)
+        #     seg = Segment(file_origin=self._absolute_filename)
         #     blk.segments += [seg]
         # 
         #     if channel_index:
@@ -205,6 +205,7 @@ class AxonaIO(BaseIO):
             num_spikes = int(params.get("num_spikes", 0))
             num_chans = int(params.get("num_chans", 1))
             samples_per_spike = int(params.get("samples_per_spike", 50))
+            # timebase = int(params.get("samples_per_spike", "96000 hz").split(" ")[0]) * pq.Hz
             timebase = int(params.get("samples_per_spike", "96000 hz").split(" ")[0]) * pq.Hz
 
             bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
@@ -314,15 +315,17 @@ class AxonaIO(BaseIO):
                 # TODO Implement lazy loading
             else:
                 data = np.fromfile(f, dtype='int8', count=sample_count)
+                signal = scale_analog_signal(data, 1.0, 1.0, 1.0) # TODO proper scaling
                 assert_end_of_data(f)
                 # data = self._kwd['recordings'][str(self._dataset)]['data'].value[:, channel_index]
                 # data = data * bit_volts[channel_index]
-                analog_signal = AnalogSignal(data,
+                analog_signal = AnalogSignal(signal,
                                              units="uV",  # TODO get correct unit
                                              sampling_rate=sample_rate)
                 # TODO read start time
             # for attributes out of neo you can annotate
             # anasig.annotate(info='raw traces')
+            
             return analog_signal
 
 
