@@ -6,7 +6,9 @@ Depends on: scipy
             numpy
             quantities
 Supported: Read
-Authors: Mikkel E. Lepperød @CINPLA, Milad H. Mobarhan @CINPLA, Svenn-Arne Dragly @CINPLA
+Authors: Milad H. Mobarhan @CINPLA, 
+         Svenn-Arne Dragly @CINPLA,
+         Mikkel E. Lepperød @CINPLA
 """
 
 from __future__ import division
@@ -42,7 +44,14 @@ def parse_params(text):
         params[name] = None
 
         if len(line_splitted) > 1:
-            params[name] = line_splitted[1]
+            # Try to convert to int, float or keep as string
+            try:
+                params[name] = int(line_splitted[1])
+            except:
+                try: 
+                    params[name] = float(line_splitted[1])
+                except:
+                    params[name] = line_splitted[1]
             
     return params
 
@@ -82,7 +91,7 @@ def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
     """
     if type(value) is np.ndarray and value.base is not None:
         raise ValueError("Value passed to scale_analog_signal cannot be a numpy view because we need to convert the entire array to a quantity.")
-    max_value = 2**(8 * bytes_per_sample - 1) # 128 when bytes_per_sample = 1
+    max_value = 2**(8 * bytes_per_sample - 1)  # 128 when bytes_per_sample = 1
     result = (value / max_value) * (adc_fullscale_mv / gain)
     result = result * pq.mV
     return result
@@ -129,8 +138,8 @@ class AxonaIO(BaseIO):
             
         params = parse_params(text)
         
-        self._adc_fullscale_mv = float(params["ADC_fullscale_mv"])
-        self._duration = float(params["duration"])
+        self._adc_fullscale = float(params["ADC_fullscale_mv"]) * pq.mV
+        self._duration = float(params["duration"])  # TODO convert from samples to seconds
         self._params = params
 
         # TODO read the set file and store necessary values as attributes on this object
@@ -152,22 +161,24 @@ class AxonaIO(BaseIO):
 
         # blk = Block()
         # if cascade:
-            # seg = Segment(file_origin=self._filename)
-            # blk.segments += [seg]
-
-            # if channel_index:
-                # if type(channel_index) is int: channel_index = [ channel_index ]
-                # if type(channel_index) is list: channel_index = np.array( channel_index )
-            # else:
-                # channel_index = np.arange(0,self._attrs['shape'][1])
-
-            # chx = ChannelIndex(name='all channels',
-                            #    index=channel_index)
-            # blk.channel_indexes.append(chx)
-
-            # ana = self.read_analogsignal(channel_index=channel_index,
-                                        #  lazy=lazy,
-                                        #  cascade=cascade)
+        #     seg = Segment(file_origin=self._filename)
+        #     blk.segments += [seg]
+        # 
+        #     if channel_index:
+        #         if type(channel_index) is int:
+        #             channel_index = [channel_index]
+        #         if type(channel_index) is list:
+        #             channel_index = np.array(channel_index)
+        #     else:
+        #         channel_index = np.arange(0, self._attrs['shape'][1])
+        # 
+        #     chx = ChannelIndex(name='all channels',
+        #                        index=channel_index)
+        #     blk.channel_indexes.append(chx)
+        # 
+        #     analog_signal = self.read_analogsignal(channel_index=channel_index,
+        #                                            lazy=lazy,
+        #                                            cascade=cascade)
 
             # TODO Call all other read functions
 
@@ -219,7 +230,7 @@ class AxonaIO(BaseIO):
         
         waveforms = scale_analog_signal(waveforms, 
                                         channel_gain_matrix,
-                                        self._adc_fullscale_mv, 
+                                        self._adc_fullscale, 
                                         bytes_per_sample)
 
         # TODO get proper t_stop
