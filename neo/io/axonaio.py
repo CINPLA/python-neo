@@ -23,6 +23,7 @@ import neo.io.tools
 import numpy as np
 import quantities as pq
 import os
+import glob
 
 python_version = sys.version_info.major
 if python_version == 2:
@@ -137,112 +138,137 @@ class AxonaIO(BaseIO):
         params = parse_params(text)
 
         self._adc_fullscale = float(params["ADC_fullscale_mv"]) * pq.mV
-        self._duration = float(params["duration"])  # TODO convert from samples to seconds
+        self._duration = float(params["duration"]) * pq.s  # TODO convert from samples to seconds
         self._tracked_spots_count = int(params["tracked_spots"])
         self._params = params
-
+        
+        # TODO this file reading can be removed, perhaps?
+        channel_group_files = glob.glob(os.path.join(self._path, self._base_filename) + ".[0-9]*")
+        
+        self._channel_to_group = {}        
+        self._channel_count = 0
+        self._channel_group_count = 0
+        for channel_group_file in channel_group_files:
+            # increment before, because channel_groups start at 1
+            self._channel_group_count += 1
+            with open(channel_group_file, "rb") as f:
+                channel_group_params = parse_header_and_leave_cursor(f)
+                num_chans = channel_group_params["num_chans"]
+                for i in range(num_chans):
+                    channel_id = self._channel_count + i
+                    group_id = self._channel_group_count
+                    self._channel_to_group[channel_id] = group_id
+                # increment after, because channels start at 0
+                self._channel_count += num_chans
+        
+        # TODO add channels only for files that exist
+        self._channel_ids = np.arange(self._channel_count)
+        
         # TODO read the set file and store necessary values as attributes on this object
 
-    def _channel_gain(self, tetrode_index, channel_index):
-        global_channel_index = tetrode_index * 4 + channel_index
+    def _channel_gain(self, channel_group_index, channel_index):
+        global_channel_index = channel_group_index * 4 + channel_index
         param_name = "gain_ch_" + str(global_channel_index)
         return float(self._params[param_name])
 
     def read_block(self,
                    lazy=False,
-                   cascade=True,
-                   channel_index=None):
+                   cascade=True):
         """
         Arguments:
             Channel_index: can be int, iterable or None to select one, many or all channel(s)
 
         """
 
-        # blk = Block()
-        # if cascade:
-        #     seg = Segment(file_origin=self._absolute_filename)
-        #     blk.segments += [seg]
-        #
-        #     if channel_index:
-        #         if type(channel_index) is int:
-        #             channel_index = [channel_index]
-        #         if type(channel_index) is list:
-        #             channel_index = np.array(channel_index)
-        #     else:
-        #         channel_index = np.arange(0, self._attrs['shape'][1])
-        #
-        #     chx = ChannelIndex(name='all channels',
-        #                        index=channel_index)
-        #     blk.channel_indexes.append(chx)
-        #
-        #     analog_signal = self.read_analogsignal(channel_index=channel_index,
-        #                                            lazy=lazy,
-        #                                            cascade=cascade)
+        blk = Block()
+        if cascade:
+            seg = Segment(file_origin=self._absolute_filename)
+            blk.segments += [seg]
+        
+            chx = ChannelIndex(0, channel_ids=self._channel_ids)
+            blk.channel_indexes.append(chx)
+        
+            seg.analogsignals = self.read_analogsignal(lazy=lazy, cascade=cascade)
+            seg.irregularlysampledsignals = self.read_tracking()
+            seg.spiketrains = self.read_spiketrain()
 
             # TODO Call all other read functions
 
-            # ana.channel_index = chx
-            # seg.duration = (self._attrs['shape'][0] / self._attrs['kwik']['sample_rate']) * pq.s
+            seg.duration = self._duration
 
-            # neo.tools.populate_RecordingChannel(blk)
-        # blk.create_many_to_one_relationship()
-        # return blk
+            # TODO May need to "populate_RecordingChannel"
+            
+            # spiketrain = self.read_spiketrain()
+            
+            # seg.spiketrains.append()
+
+        blk.create_many_to_one_relationship()
+        return blk
 
     def read_epoch():
         # TODO read epoch data
         pass
 
-    def read_spiketrain(self, tetrode_index=0):
+    def read_spiketrain(self):
         # TODO add parameter to allow user to read raw data or not?
         assert(SpikeTrain in self.readable_objects)
-        raw_filename = os.path.join(self._path, self._base_filename + "." + str(tetrode_index + 1))
-        with open(raw_filename, "rb") as f:
-            params = parse_header_and_leave_cursor(f)
+        
+        spike_trains = []
+        
+        channel_group_files = glob.glob(os.path.join(self._path, self._base_filename) + ".[0-9]*")
+        for raw_filename in sorted(channel_group_files):
+            with open(raw_filename, "rb") as f:
+                params = parse_header_and_leave_cursor(f)
 
-            bytes_per_timestamp = params.get("bytes_per_timestamp", 4)
-            bytes_per_sample = params.get("bytes_per_sample", 1)
-            num_spikes = params.get("num_spikes", 0)
-            num_chans = params.get("num_chans", 1)
-            samples_per_spike = params.get("samples_per_spike", 50)
-            timebase = params.get("samples_per_spike", 96000) * pq.Hz
+                channel_group_index = int(raw_filename.split(".")[-1])
+                bytes_per_timestamp = params.get("bytes_per_timestamp", 4)
+                bytes_per_sample = params.get("bytes_per_sample", 1)
+                num_spikes = params.get("num_spikes", 0)
+                num_chans = params.get("num_chans", 1)
+                samples_per_spike = params.get("samples_per_spike", 50)
+                timebase = params.get("samples_per_spike", 96000) * pq.Hz
 
-            bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
-            bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
+                bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
+                bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
 
-            timestamp_dtype = ">u" + str(bytes_per_timestamp)
-            waveform_dtype = "<i" + str(bytes_per_sample)
+                timestamp_dtype = ">u" + str(bytes_per_timestamp)
+                waveform_dtype = "<i" + str(bytes_per_sample)
 
-            dtype = np.dtype([("times", (timestamp_dtype, 1), 1), ("waveforms", (waveform_dtype, 1), samples_per_spike)])
+                dtype = np.dtype([("times", (timestamp_dtype, 1), 1), ("waveforms", (waveform_dtype, 1), samples_per_spike)])
 
-            data = np.fromfile(f, dtype=dtype, count=num_spikes * num_chans)
-            assert_end_of_data(f)
+                data = np.fromfile(f, dtype=dtype, count=num_spikes * num_chans)
+                assert_end_of_data(f)
 
-        times = data["times"] / timebase  # seconds because timebase is in Hz
-        waveforms = data["waveforms"]
-        # TODO ensure waveforms is properly reshaped
-        waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
-        waveforms = waveforms.astype(float)
+            times = data["times"] / timebase  # seconds because timebase is in Hz
+            waveforms = data["waveforms"]
+            # TODO ensure waveforms is properly reshaped
+            waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
+            waveforms = waveforms.astype(float)
 
-        channel_gain_matrix = np.ones(waveforms.shape)
-        for i in range(num_chans):
-            channel_gain_matrix[:, i, :] *= self._channel_gain(tetrode_index, i)
+            channel_gain_matrix = np.ones(waveforms.shape)
+            for i in range(num_chans):
+                channel_gain_matrix[:, i, :] *= self._channel_gain(channel_group_index, i)
 
-        waveforms = scale_analog_signal(waveforms,
-                                        channel_gain_matrix,
-                                        self._adc_fullscale,
-                                        bytes_per_sample)
+            waveforms = scale_analog_signal(waveforms,
+                                            channel_gain_matrix,
+                                            self._adc_fullscale,
+                                            bytes_per_sample)
 
-        # TODO get proper t_stop
-        spike_train = SpikeTrain(times, t_stop=times[-1],
-                                 waveforms=waveforms)
+            # TODO get proper t_stop
+            spike_train = SpikeTrain(times, 
+                                     t_stop=times[-1],
+                                     waveforms=waveforms, 
+                                     **params)
+            spike_trains.append(spike_train)
 
-        return spike_train
+        return spike_trains
 
     def read_tracking(self):
         """
         Read tracking data_end
         """
         # TODO fix for multiple .pos files if necessary
+        # TODO store attributes, such as pixels_per_metre
         pos_filename = os.path.join(self._path, self._base_filename+".pos")
         if not os.path.exists(pos_filename):
             raise IOError("'.pos' file not found:" + pos_filename)
@@ -283,20 +309,22 @@ class AxonaIO(BaseIO):
             length_scale = float(params["pixels_per_metre"]) / pq.m
             coords = data["coords"].astype(float) / length_scale
             # positions with value 1023 are missing
-            for i in range(2*self._tracked_spots_count):
-                coords[np.where(data["coords"][:,i]==1023)] = np.nan * pq.m
+            for i in range(2 * self._tracked_spots_count):
+                coords[np.where(data["coords"][:, i] == 1023)] = np.nan * pq.m
 
-            irr_signal = []
+            irr_signals = []
             for i in range(self._tracked_spots_count):
-                irr_signal.append(IrregularlySampledSignal(signal=coords[:, i*2: i*2+1],
-                                             times=times,
-                                             units="m",
-                                             time_units="s"))
-            return irr_signal
+                irr_signal = IrregularlySampledSignal(name="tracking_xy" + str(i),
+                                                      signal=coords[:, i*2:i*2+1+1],  # + 1 for y + 1 for Python
+                                                      times=times,
+                                                      units="m",
+                                                      time_units="s",
+                                                      **params)
+                irr_signals.append(irr_signal)
+            return irr_signals
 
 
     def read_analogsignal(self,
-                          channel_index=None,
                           lazy=False,
                           cascade=True):
         """
@@ -304,42 +332,51 @@ class AxonaIO(BaseIO):
         Arguments:
             channel_index: must be integer array
         """
+        
+        # TODO read for specific channel
 
         # TODO check that .egf file exists
 
-        eeg_filename = os.path.join(self._path, self._base_filename+".eeg")
-        if not os.path.exists(eeg_filename):
-            raise IOError("'.eeg' file not found:" + eeg_filename)
+        
+        analog_signals = []
+        eeg_basename = os.path.join(self._path, self._base_filename)
+        eeg_files = glob.glob(eeg_basename + ".eeg")
+        eeg_files += glob.glob(eeg_basename + ".eeg[0-9]*")
+        for eeg_filename in sorted(eeg_files):
+            with open(eeg_filename, "rb") as f:
+                params = parse_header_and_leave_cursor(f)
 
-        with open(eeg_filename, "rb") as f:
-            params = parse_header_and_leave_cursor(f)
+                sample_count = int(params["num_EEG_samples"])  # num_EEG_samples 120250
+                sample_rate_split = params["sample_rate"].split(" ")
+                bytes_per_sample = params["bytes_per_sample"]
+                assert(sample_rate_split[1] == "hz")
+                sample_rate = float(sample_rate_split[0]) * pq.Hz  # sample_rate 250.0 hz
 
-            sample_count = int(params["num_EEG_samples"])  # num_EEG_samples 120250
-            sample_rate_split = params["sample_rate"].split(" ")
-            assert(sample_rate_split[1] == "hz")
-            sample_rate = float(sample_rate_split[0]) * pq.Hz  # sample_rate 250.0 hz
-
-            if lazy:
-                analog_signal = AnalogSignal([],
-                                             units="uV",  # TODO get correct unit
-                                             sampling_rate=sample_rate)
-                # we add the attribute lazy_shape with the size if loaded
-                # anasig.lazy_shape = self._attrs['shape'][0] # TODO do we need this
-                # TODO Implement lazy loading
-            else:
-                data = np.fromfile(f, dtype='int8', count=sample_count)
-                signal = scale_analog_signal(data, 1.0, 1.0, 1.0) # TODO proper scaling
-                assert_end_of_data(f)
-                # data = self._kwd['recordings'][str(self._dataset)]['data'].value[:, channel_index]
-                # data = data * bit_volts[channel_index]
-                analog_signal = AnalogSignal(signal,
-                                             units="uV",  # TODO get correct unit
-                                             sampling_rate=sample_rate)
-                # TODO read start time
-            # for attributes out of neo you can annotate
-            # anasig.annotate(info='raw traces')
-            
-            return analog_signal
+                if lazy:
+                    # analog_signal = AnalogSignal([],
+                    #                              units="uV",  # TODO get correct unit
+                    #                              sampling_rate=sample_rate)
+                    # we add the attribute lazy_shape with the size if loaded
+                    # anasig.lazy_shape = self._attrs['shape'][0] # TODO do we need this
+                    pass
+                    # TODO Implement lazy loading
+                else:
+                    sample_dtype = (('<i' + str(bytes_per_sample), 1), params["num_chans"])
+                    data = np.fromfile(f, dtype=sample_dtype, count=sample_count)
+                    assert_end_of_data(f)
+                    signal = scale_analog_signal(data, 1.0, 1.0, 1.0) # TODO proper scaling
+                    # data = self._kwd['recordings'][str(self._dataset)]['data'].value[:, channel_index]
+                    # data = data * bit_volts[channel_index]
+                    analog_signal = AnalogSignal(signal,
+                                                 units="uV",  # TODO get correct unit
+                                                 sampling_rate=sample_rate,
+                                                 **params)
+                    # TODO read start time
+                # for attributes out of neo you can annotate
+                # anasig.annotate(info='raw traces')
+                analog_signals.append(analog_signal)
+                
+        return analog_signals
 
 
 if __name__ == "__main__":
@@ -348,4 +385,15 @@ if __name__ == "__main__":
     # io.read_analogsignal()
     # io.read_spiketrain()
     # io.read_spiketrainlist()
-    io.read_tracking()
+    # io.read_tracking()
+    block = io.read_block()
+    
+    from neo.io.hdf5io import NeoHdf5IO
+    
+    testfile = "/tmp/test.h5"
+    try:
+        os.remove("/tmp/test.h5")
+    except:
+        pass
+    hdf5io = NeoHdf5IO("/tmp/test.h5")
+    hdf5io.write(block)
