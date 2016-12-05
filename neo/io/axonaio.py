@@ -16,7 +16,7 @@ from __future__ import with_statement
 import sys
 from neo.io.baseio import BaseIO
 from neo.core import (Segment, SpikeTrain, Unit, Epoch, AnalogSignal,
-                      ChannelIndex, Block)
+                      ChannelIndex, Block, IrregularlySampledSignal)
 import neo.io.tools
 import numpy as np
 import quantities as pq
@@ -32,18 +32,18 @@ def parse_params(text):
 
     for line in text.split("\n"):
         line = line.strip()
-        
+
         if len(line) == 0:
             continue
-            
+
         line_splitted = line.split(" ", 1)
-        
+
         name = line_splitted[0]
         params[name] = None
 
         if len(line_splitted) > 1:
             params[name] = line_splitted[1]
-            
+
     return params
 
 
@@ -59,25 +59,25 @@ def parse_header_and_leave_cursor(file_handle):
 
         if header[-len(search_string):] == search_string:
             break
-            
+
     params = parse_params(header)
 
     return params
-    
+
 
 def assert_end_of_data(file_handle):
     remaining_data = str(file_handle.read(), 'latin1')
     assert(remaining_data.strip() == "data_end")
-    
+
 
 def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
     """
     Takes value as raw sample data and converts it to millivolts quantity.
-    
+
     The mapping in the case of bytes_per_sample = 1 is
-    
+
         [-128, 127] -> [-1.0, (127.0/128.0)] * adc_fullscale_mv / gain (mV)
-    
+
     The correctness of this mapping has been verified by contacting Axona.
     """
     if type(value) is np.ndarray and value.base is not None:
@@ -86,7 +86,7 @@ def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
     result = (value / max_value) * (adc_fullscale_mv / gain)
     result = result * pq.mV
     return result
-    
+
 
 class AxonaIO(BaseIO):
     """
@@ -123,18 +123,19 @@ class AxonaIO(BaseIO):
 
         if extension != ".set":
             raise ValueError("file extension must be '.set'")
-            
+
         with open(self._absolute_filename, "r") as f:
             text = f.read()
-            
+
         params = parse_params(text)
-        
+
         self._adc_fullscale_mv = float(params["ADC_fullscale_mv"])
         self._duration = float(params["duration"])
+        self._tracked_spots_count = int(params["tracked_spots"])
         self._params = params
 
         # TODO read the set file and store necessary values as attributes on this object
-        
+
     def _channel_gain(self, tetrode_index, channel_index):
         global_channel_index = tetrode_index * 4 + channel_index
         param_name = "gain_ch_" + str(global_channel_index)
@@ -198,38 +199,41 @@ class AxonaIO(BaseIO):
 
             bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
             bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
-            
+
             timestamp_dtype = ">u" + str(bytes_per_timestamp)
-            waveform_dtype = "<i" + str(bytes_per_sample)            
-            
+            waveform_dtype = "<i" + str(bytes_per_sample)
+
             dtype = np.dtype([("times", (timestamp_dtype, 1), 1), ("waveforms", (waveform_dtype, 1), samples_per_spike)])
-            
+
             data = np.fromfile(f, dtype=dtype, count=num_spikes * num_chans)
             assert_end_of_data(f)
-            
+
         times = data["times"] / timebase  # seconds because timebase is in Hz
         waveforms = data["waveforms"]
         # TODO ensure waveforms is properly reshaped
         waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
         waveforms = waveforms.astype(float)
-        
+
         channel_gain_matrix = np.ones(waveforms.shape)
         for i in range(num_chans):
             channel_gain_matrix[:, i, :] *= self._channel_gain(tetrode_index, i)
-        
-        waveforms = scale_analog_signal(waveforms, 
+
+        waveforms = scale_analog_signal(waveforms,
                                         channel_gain_matrix,
-                                        self._adc_fullscale_mv, 
+                                        self._adc_fullscale_mv,
                                         bytes_per_sample)
 
         # TODO get proper t_stop
         spike_train = SpikeTrain(times, t_stop=times[-1],
                                  waveforms=waveforms)
-                                     
+
         return spike_train
-        
+
     def read_tracking(self):
-        # TODO fix for multiple .pos files
+        """
+        Read tracking data_end
+        """
+        # TODO fix for multiple .pos files if necessary
         pos_filename = os.path.join(self._path, self._base_filename+".pos")
         if not os.path.exists(pos_filename):
             raise IOError("'.pos' file not found:" + pos_filename)
@@ -246,29 +250,41 @@ class AxonaIO(BaseIO):
             pos_samples_count = int(params["num_pos_samples"])
             bytes_per_timestamp = int(params["bytes_per_timestamp"])
             bytes_per_coord = int(params["bytes_per_coord"])
-            tracked_spots_count = 2  # TODO read this from .set file (tracked_spots_count)
 
             timestamp_dtype = ">i" + str(bytes_per_timestamp)
-            coord_dtype = "<i" + str(bytes_per_coord)
+            coord_dtype = ">i" + str(bytes_per_coord)
 
             bytes_per_pixel_count = 4
-            pixel_count_dtype = ">i"+str(bytes_per_pixel_count)
+            pixel_count_dtype = ">i" + str(bytes_per_pixel_count)
 
-            bytes_per_pos = (bytes_per_timestamp + 2*tracked_spots_count*bytes_per_coord + 8)  # pos_format is as follows for this file t,x1,y1,x2,y2,numpix1,numpix2.
-
-            print(sample_rate, eeg_samples_per_position, pos_samples_count)
+            bytes_per_pos = (bytes_per_timestamp + 2 * self._tracked_spots_count * bytes_per_coord + 8)  # pos_format is as follows for this file t,x1,y1,x2,y2,numpix1,numpix2.
 
             # read data:
-            # TODO: we need two dtype versions, one for one diode and another for two
             dtype = np.dtype([("t", (timestamp_dtype, 1)),
-                              ("r1", (coord_dtype, 1), 2),
-                              ("r2", (coord_dtype, 1), 2),
+                              ("coords", (coord_dtype, 1), 2 * self._tracked_spots_count),
                               ("pixel_count", (pixel_count_dtype, 1), 2)])
 
             data = np.fromfile(f, dtype=dtype, count=pos_samples_count)
             assert_end_of_data(f)
 
-            print(data)
+
+            time_scale = float(params["timebase"].split(" ")[0]) * pq.Hz
+            times = data["t"].astype(float) / time_scale
+
+            length_scale = float(params["pixels_per_metre"]) / pq.m
+            coords = data["coords"].astype(float) / length_scale
+            # positions with value 1023 are missing
+            for i in range(2*self._tracked_spots_count):
+                coords[np.where(data["coords"][:,i]==1023)] = np.nan * pq.m
+
+            irr_signal = []
+            for i in range(self._tracked_spots_count):
+                irr_signal.append(IrregularlySampledSignal(signal=coords[:, i*2: i*2+1],
+                                             times=times,
+                                             units="m",
+                                             time_units="s"))
+            return irr_signal
+
 
     def read_analogsignal(self,
                           channel_index=None,
