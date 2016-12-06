@@ -243,7 +243,7 @@ class AxonaIO(BaseIO):
                 num_spikes = params.get("num_spikes", 0)
                 num_chans = params.get("num_chans", 1)
                 samples_per_spike = params.get("samples_per_spike", 50)
-                timebase = params.get("timebase", 96000) * pq.Hz
+                timebase = int(params.get("timebase", "96000 hz").split(" ")[0]) * pq.Hz
 
                 bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
                 bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
@@ -256,7 +256,7 @@ class AxonaIO(BaseIO):
                 data = np.fromfile(f, dtype=dtype, count=num_spikes * num_chans)
                 assert_end_of_data(f)
 
-            times = data["times"] / timebase  # seconds because timebase is in Hz
+            times = data["times"][::4] / timebase  # time for each waveform is the same, so we take each fourth time
             waveforms = data["waveforms"]
             # TODO ensure waveforms is properly reshaped
             waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
