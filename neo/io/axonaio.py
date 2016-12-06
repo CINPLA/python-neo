@@ -92,7 +92,7 @@ def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
         raise ValueError("Value passed to scale_analog_signal cannot be a numpy view because we need to convert the entire array to a quantity.")
     max_value = 2**(8 * bytes_per_sample - 1)  # 128 when bytes_per_sample = 1
     result = (value / max_value) * (adc_fullscale_mv / gain)
-    result = result * pq.mV
+    result = result
     return result
 
 
@@ -137,7 +137,7 @@ class AxonaIO(BaseIO):
 
         params = parse_params(text)
 
-        self._adc_fullscale = float(params["ADC_fullscale_mv"]) * pq.mV
+        self._adc_fullscale = float(params["ADC_fullscale_mv"]) * 1000.0 * pq.uV
         self._duration = float(params["duration"]) * pq.s  # TODO convert from samples to seconds
         self._tracked_spots_count = int(params["tracked_spots"])
         self._params = params
@@ -145,19 +145,33 @@ class AxonaIO(BaseIO):
         # TODO this file reading can be removed, perhaps?
         channel_group_files = glob.glob(os.path.join(self._path, self._base_filename) + ".[0-9]*")
         
-        self._channel_to_group = {}        
+        self._channel_to_channel_index = {}    
         self._channel_count = 0
         self._channel_group_count = 0
+        self._channel_indexes = []            
         for channel_group_file in channel_group_files:
             # increment before, because channel_groups start at 1
             self._channel_group_count += 1
+            group_id = self._channel_group_count
             with open(channel_group_file, "rb") as f:
                 channel_group_params = parse_header_and_leave_cursor(f)
                 num_chans = channel_group_params["num_chans"]
+                channel_ids = []
+                channel_names = []
                 for i in range(num_chans):
                     channel_id = self._channel_count + i
-                    group_id = self._channel_group_count
-                    self._channel_to_group[channel_id] = group_id
+                    channel_ids.append(channel_id)
+                    channel_names.append("channel_{}_group_{}_internal_{}".format(channel_id, group_id, i))
+                
+                channel_index = ChannelIndex(group_id, 
+                                             channel_names=np.array(channel_names, dtype="S"),
+                                             channel_ids=np.array(channel_ids))
+                self._channel_indexes.append(channel_index)
+                
+                for i in range(num_chans):
+                    channel_id = self._channel_count + i
+                    self._channel_to_channel_index[channel_id] = channel_index
+                
                 # increment after, because channels start at 0
                 self._channel_count += num_chans
         
@@ -183,10 +197,10 @@ class AxonaIO(BaseIO):
         blk = Block()
         if cascade:
             seg = Segment(file_origin=self._absolute_filename)
+            
+            blk.channel_indexes = self._channel_indexes
+            
             blk.segments += [seg]
-        
-            chx = ChannelIndex(0, channel_ids=self._channel_ids)
-            blk.channel_indexes.append(chx)
         
             seg.analogsignals = self.read_analogsignal(lazy=lazy, cascade=cascade)
             seg.irregularlysampledsignals = self.read_tracking()
@@ -345,15 +359,23 @@ class AxonaIO(BaseIO):
         eeg_files += glob.glob(eeg_basename + ".egf")
         eeg_files += glob.glob(eeg_basename + ".egf[0-9]*")
         for eeg_filename in sorted(eeg_files):
-            file_type = eeg_filename.split(".")[-1][:3]
+            extension = os.path.splitext(eeg_filename)[-1][1:]
+            file_type = extension[:3]
+            suffix = extension[3:]
+            if suffix == "":
+                suffix = "1"
+            suffix = int(suffix)
             with open(eeg_filename, "rb") as f:
                 params = parse_header_and_leave_cursor(f)
+                params["raw_filename"] = eeg_filename
+                
                 if file_type == "eeg":
                     sample_count = int(params["num_EEG_samples"])
                 elif file_type == "egf":
                     sample_count = int(params["num_EGF_samples"])
                 else:
                     raise IOError("Unknown file type. Should be .eeg or .efg.")
+                    
                 sample_rate_split = params["sample_rate"].split(" ")
                 bytes_per_sample = params["bytes_per_sample"]
                 assert(sample_rate_split[1].lower() == "hz")
@@ -371,6 +393,21 @@ class AxonaIO(BaseIO):
                     sample_dtype = (('<i' + str(bytes_per_sample), 1), params["num_chans"])
                     data = np.fromfile(f, dtype=sample_dtype, count=sample_count)
                     assert_end_of_data(f)
+                    
+                    # TODO Find the channel index of the EEG signal:
+                    
+                    # TODO there may be exceptions to eeg-files and suffixes (24 not in use)
+                    
+                    # EEG-file suffix gives N
+                    lookup_id = self._params["EEG_ch_" + str(suffix)]
+                    eeg_mode = self._params["mode_ch_" + str(lookup_id)]
+                    ref_id = self._params["b_in_ch_" + str(lookup_id)]
+                    eeg_channel_index = self._params["ref_" + str(ref_id)]
+                    params["channel_id"] = eeg_channel_index
+                    
+                    # Look up eeg_ch_N
+                    # Look up 
+                    
                     signal = scale_analog_signal(data, 1.0, 1.0, 1.0) # TODO proper scaling
                     # data = self._kwd['recordings'][str(self._dataset)]['data'].value[:, channel_index]
                     # data = data * bit_volts[channel_index]
@@ -379,6 +416,10 @@ class AxonaIO(BaseIO):
                                                  units="uV",  # TODO get correct unit
                                                  sampling_rate=sample_rate,
                                                  **params)
+                    
+                    # TODO what if read_analogsignal is called twice? The channel_index list should be cleared at some point                             
+                    channel_index = self._channel_to_channel_index[eeg_channel_index]
+                    channel_index.analogsignals.append(analog_signal)
                     # TODO read start time
                 # for attributes out of neo you can annotate
                 # anasig.annotate(info='raw traces')
