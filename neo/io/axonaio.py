@@ -141,11 +141,11 @@ class AxonaIO(BaseIO):
         self._duration = float(params["duration"]) * pq.s  # TODO convert from samples to seconds
         self._tracked_spots_count = int(params["tracked_spots"])
         self._params = params
-        
+
         # TODO this file reading can be removed, perhaps?
         channel_group_files = glob.glob(os.path.join(self._path, self._base_filename) + ".[0-9]*")
-        
-        self._channel_to_group = {}        
+
+        self._channel_to_group = {}
         self._channel_count = 0
         self._channel_group_count = 0
         for channel_group_file in channel_group_files:
@@ -160,10 +160,10 @@ class AxonaIO(BaseIO):
                     self._channel_to_group[channel_id] = group_id
                 # increment after, because channels start at 0
                 self._channel_count += num_chans
-        
+
         # TODO add channels only for files that exist
         self._channel_ids = np.arange(self._channel_count)
-        
+
         # TODO read the set file and store necessary values as attributes on this object
 
     def _channel_gain(self, channel_group_index, channel_index):
@@ -184,10 +184,10 @@ class AxonaIO(BaseIO):
         if cascade:
             seg = Segment(file_origin=self._absolute_filename)
             blk.segments += [seg]
-        
+
             chx = ChannelIndex(0, channel_ids=self._channel_ids)
             blk.channel_indexes.append(chx)
-        
+
             seg.analogsignals = self.read_analogsignal(lazy=lazy, cascade=cascade)
             seg.irregularlysampledsignals = self.read_tracking()
             seg.spiketrains = self.read_spiketrain()
@@ -197,9 +197,9 @@ class AxonaIO(BaseIO):
             seg.duration = self._duration
 
             # TODO May need to "populate_RecordingChannel"
-            
+
             # spiketrain = self.read_spiketrain()
-            
+
             # seg.spiketrains.append()
 
         blk.create_many_to_one_relationship()
@@ -212,9 +212,9 @@ class AxonaIO(BaseIO):
     def read_spiketrain(self):
         # TODO add parameter to allow user to read raw data or not?
         assert(SpikeTrain in self.readable_objects)
-        
+
         spike_trains = []
-        
+
         channel_group_files = glob.glob(os.path.join(self._path, self._base_filename) + ".[0-9]*")
         for raw_filename in sorted(channel_group_files):
             with open(raw_filename, "rb") as f:
@@ -255,9 +255,9 @@ class AxonaIO(BaseIO):
                                             bytes_per_sample)
 
             # TODO get proper t_stop
-            spike_train = SpikeTrain(times, 
+            spike_train = SpikeTrain(times,
                                      t_stop=times[-1],
-                                     waveforms=waveforms, 
+                                     waveforms=waveforms,
                                      **params)
             spike_trains.append(spike_train)
 
@@ -332,12 +332,12 @@ class AxonaIO(BaseIO):
         Arguments:
             channel_index: must be integer array
         """
-        
+
         # TODO read for specific channel
 
         # TODO check that .egf file exists
 
-        
+
         analog_signals = []
         eeg_basename = os.path.join(self._path, self._base_filename)
         eeg_files = glob.glob(eeg_basename + ".eeg")
@@ -383,7 +383,7 @@ class AxonaIO(BaseIO):
                 # for attributes out of neo you can annotate
                 # anasig.annotate(info='raw traces')
                 analog_signals.append(analog_signal)
-                
+
         return analog_signals
 
 
@@ -395,9 +395,9 @@ if __name__ == "__main__":
     # io.read_spiketrainlist()
     # io.read_tracking()
     block = io.read_block()
-    
+
     from neo.io.hdf5io import NeoHdf5IO
-    
+
     testfile = "/tmp/test.h5"
     try:
         os.remove("/tmp/test.h5")
