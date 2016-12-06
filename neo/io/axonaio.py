@@ -145,7 +145,8 @@ class AxonaIO(BaseIO):
         # TODO this file reading can be removed, perhaps?
         channel_group_files = glob.glob(os.path.join(self._path, self._base_filename) + ".[0-9]*")
         
-        self._channel_to_channel_index = {}    
+        self._channel_to_channel_index = {}  
+        self._channel_group_to_channel_index = {}
         self._channel_count = 0
         self._channel_group_count = 0
         self._channel_indexes = []            
@@ -167,11 +168,12 @@ class AxonaIO(BaseIO):
                                              channel_names=np.array(channel_names, dtype="S"),
                                              channel_ids=np.array(channel_ids))
                 self._channel_indexes.append(channel_index)
+                self._channel_group_to_channel_index[group_id] = channel_index
                 
                 for i in range(num_chans):
                     channel_id = self._channel_count + i
                     self._channel_to_channel_index[channel_id] = channel_index
-                
+                    
                 # increment after, because channels start at 0
                 self._channel_count += num_chans
         
@@ -181,8 +183,9 @@ class AxonaIO(BaseIO):
         # TODO read the set file and store necessary values as attributes on this object
 
     def _channel_gain(self, channel_group_index, channel_index):
+        # TODO split into two functions, one for mapping and one for gain lookup
         global_channel_index = channel_group_index * 4 + channel_index
-        param_name = "gain_ch_" + str(global_channel_index)
+        param_name = "gain_ch_{}".format(global_channel_index)
         return float(self._params[param_name])
 
     def read_block(self,
@@ -274,6 +277,10 @@ class AxonaIO(BaseIO):
                                      waveforms=waveforms, 
                                      **params)
             spike_trains.append(spike_train)
+            channel_index = self._channel_group_to_channel_index[channel_group_index]
+            unit = Unit()
+            unit.spiketrains.append(spike_train)
+            channel_index.units.append(unit)
 
         return spike_trains
 
@@ -335,6 +342,8 @@ class AxonaIO(BaseIO):
                                                       time_units="s",
                                                       **params)
                 irr_signals.append(irr_signal)
+                
+                # TODO add this signal to a channel index?
             return irr_signals
 
 
@@ -382,47 +391,42 @@ class AxonaIO(BaseIO):
                 sample_rate = float(sample_rate_split[0]) * pq.Hz  # sample_rate 250.0 hz
 
                 if lazy:
+                    # TODO Implement lazy loading
+                    pass
                     # analog_signal = AnalogSignal([],
                     #                              units="uV",  # TODO get correct unit
                     #                              sampling_rate=sample_rate)
                     # we add the attribute lazy_shape with the size if loaded
                     # anasig.lazy_shape = self._attrs['shape'][0] # TODO do we need this
-                    pass
-                    # TODO Implement lazy loading
                 else:
                     sample_dtype = (('<i' + str(bytes_per_sample), 1), params["num_chans"])
                     data = np.fromfile(f, dtype=sample_dtype, count=sample_count)
                     assert_end_of_data(f)
                     
-                    # TODO Find the channel index of the EEG signal:
+                    eeg_final_channel_id = self._params["EEG_ch_" + str(suffix)]
+                    eeg_mode = self._params["mode_ch_" + str(eeg_final_channel_id)]
+                    ref_id = self._params["b_in_ch_" + str(eeg_final_channel_id)]
+                    eeg_original_channel_id = self._params["ref_" + str(ref_id)]
                     
-                    # TODO there may be exceptions to eeg-files and suffixes (24 not in use)
+                    params["channel_id"] = eeg_original_channel_id
                     
-                    # EEG-file suffix gives N
-                    lookup_id = self._params["EEG_ch_" + str(suffix)]
-                    eeg_mode = self._params["mode_ch_" + str(lookup_id)]
-                    ref_id = self._params["b_in_ch_" + str(lookup_id)]
-                    eeg_channel_index = self._params["ref_" + str(ref_id)]
-                    params["channel_id"] = eeg_channel_index
+                    gain = self._params["gain_ch_{}".format(eeg_final_channel_id)]
                     
-                    # Look up eeg_ch_N
-                    # Look up 
-                    
-                    signal = scale_analog_signal(data, 1.0, 1.0, 1.0) # TODO proper scaling
-                    # data = self._kwd['recordings'][str(self._dataset)]['data'].value[:, channel_index]
-                    # data = data * bit_volts[channel_index]
-                    # TODO Add channel index
+                    signal = scale_analog_signal(data,
+                                                 gain, 
+                                                 self._adc_fullscale, 
+                                                 bytes_per_sample)
+                                                 
+                    # TODO read start time
                     analog_signal = AnalogSignal(signal,
                                                  units="uV",  # TODO get correct unit
                                                  sampling_rate=sample_rate,
                                                  **params)
                     
                     # TODO what if read_analogsignal is called twice? The channel_index list should be cleared at some point                             
-                    channel_index = self._channel_to_channel_index[eeg_channel_index]
+                    channel_index = self._channel_to_channel_index[eeg_original_channel_id]
                     channel_index.analogsignals.append(analog_signal)
-                    # TODO read start time
-                # for attributes out of neo you can annotate
-                # anasig.annotate(info='raw traces')
+                    
                 analog_signals.append(analog_signal)
                 
         return analog_signals
