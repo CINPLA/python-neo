@@ -243,7 +243,7 @@ class AxonaIO(BaseIO):
                 num_spikes = params.get("num_spikes", 0)
                 num_chans = params.get("num_chans", 1)
                 samples_per_spike = params.get("samples_per_spike", 50)
-                timebase = params.get("samples_per_spike", 96000) * pq.Hz
+                timebase = params.get("timebase", 96000) * pq.Hz
 
                 bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
                 bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
