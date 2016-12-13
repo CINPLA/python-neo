@@ -101,6 +101,7 @@ def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
 class AxonaIO(BaseIO):
     """
     Class for "reading" experimental data from an Axona dataset.
+    
     """
     is_readable = True
     is_writable = False
