@@ -78,6 +78,7 @@ def assert_end_of_data(file_handle):
     assert(remaining_data.strip() == "data_end")
 
 
+
 def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
     """
     Takes value as raw sample data and converts it to millivolts quantity.
