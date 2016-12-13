@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 """
 Class for reading data from an Axona dataset
 Depends on: scipy
