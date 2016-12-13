@@ -71,6 +71,7 @@ def parse_header_and_leave_cursor(file_handle):
     params = parse_params(header)
 
     return params
+    
 
 
 def assert_end_of_data(file_handle):
@@ -100,6 +101,8 @@ def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
 class AxonaIO(BaseIO):
     """
     Class for "reading" experimental data from an Axona dataset.
+    
+    Usefuls for Neo.
     """
     is_readable = True
     is_writable = False
