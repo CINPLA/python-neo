@@ -119,7 +119,7 @@ class KwikIO(BaseIO):
         """
 
         """
-
+        assert isinstance(cluster_metadata, str)
         blk = Block()
         if cascade:
             seg = Segment(file_origin=self.filename)
@@ -132,7 +132,10 @@ class KwikIO(BaseIO):
                 clusters = model.spike_clusters
                 for cluster_id in model.cluster_ids:
                     meta = model.cluster_metadata[cluster_id]
-                    if cluster_metadata != 'all':
+                    if cluster_metadata == 'all':
+                        if meta != 'noise':
+                            continue
+                    else:
                         if meta != cluster_metadata:
                             continue
                     sptr = self.read_spiketrain(cluster_id=cluster_id, model=model,
@@ -168,7 +171,7 @@ class KwikIO(BaseIO):
             w = None
         sptr = SpikeTrain(times=model.spike_times[idx],
                           t_stop=model.duration, waveforms=w, units='s',
-                          sampling_rate=model.sample_rate,
+                          sampling_rate=model.sample_rate*pq.Hz,
                           file_origin=self.filename,
                           **{'cluster_id': cluster_id})
         return sptr
