@@ -243,8 +243,9 @@ class AxonaIO(BaseIO):
                 num_spikes = params.get("num_spikes", 0)
                 num_chans = params.get("num_chans", 1)
                 samples_per_spike = params.get("samples_per_spike", 50)
-                timebase = params.get("samples_per_spike", 96000) * pq.Hz
-
+                # timebase = params.get("samples_per_spike", 96000) * pq.Hz
+                timebase = 96000 *pq.Hz # TODO get timebase from set file
+                sampling_rate = 48000 *pq.Hz # TODO get sampling_rate from set file
                 bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
                 bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
 
@@ -255,8 +256,9 @@ class AxonaIO(BaseIO):
 
                 data = np.fromfile(f, dtype=dtype, count=num_spikes * num_chans)
                 assert_end_of_data(f)
-            # TODO fix times len it is not necessary right to select the first times
-            times = data["times"][:num_spikes] / timebase  # seconds because timebase is in Hz
+            # times are saved for each channel
+            times = data["times"][::num_chans] / timebase
+            assert len(times) == num_spikes
             waveforms = data["waveforms"]
             # TODO ensure waveforms is properly reshaped
             waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
@@ -265,16 +267,17 @@ class AxonaIO(BaseIO):
             channel_gain_matrix = np.ones(waveforms.shape)
             for i in range(num_chans):
                 channel_gain_matrix[:, i, :] *= self._channel_gain(channel_group_index, i)
-
             waveforms = scale_analog_signal(waveforms,
                                             channel_gain_matrix,
                                             self._adc_fullscale,
                                             bytes_per_sample)
 
-            # TODO get proper t_stop
+            # TODO get left_sweep form setfile?
             spike_train = SpikeTrain(times,
                                      t_stop=self._duration,
                                      waveforms=waveforms,
+                                     sampling_rate=sampling_rate,
+                                     left_sweep=0.2*pq.ms,
                                      **params)
             spike_trains.append(spike_train)
             channel_index = self._channel_group_to_channel_index[channel_group_index]
