@@ -73,7 +73,7 @@ def parse_header_and_leave_cursor(file_handle):
     params = parse_params(header)
 
     return params
-    
+
 
 
 def assert_end_of_data(file_handle):
@@ -194,8 +194,6 @@ class AxonaIO(BaseIO):
                    lazy=False,
                    cascade=True):
         """
-        Arguments:
-            Channel_index: can be int, iterable or None to select one, many or all channel(s)
 
         """
 
@@ -257,8 +255,8 @@ class AxonaIO(BaseIO):
 
                 data = np.fromfile(f, dtype=dtype, count=num_spikes * num_chans)
                 assert_end_of_data(f)
-
-            times = data["times"] / timebase  # seconds because timebase is in Hz
+            # TODO fix times len it is not necessary right to select the first times
+            times = data["times"][:num_spikes] / timebase  # seconds because timebase is in Hz
             waveforms = data["waveforms"]
             # TODO ensure waveforms is properly reshaped
             waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
@@ -275,7 +273,7 @@ class AxonaIO(BaseIO):
 
             # TODO get proper t_stop
             spike_train = SpikeTrain(times,
-                                     t_stop=times[-1],
+                                     t_stop=self._duration,
                                      waveforms=waveforms,
                                      **params)
             spike_trains.append(spike_train)
@@ -298,7 +296,7 @@ class AxonaIO(BaseIO):
 
         with open(pos_filename, "rb") as f:
             params = parse_header_and_leave_cursor(f)
-            print(params)
+            # print(params)
 
             sample_rate_split = params["sample_rate"].split(" ")
             assert(sample_rate_split[1] == "hz")
