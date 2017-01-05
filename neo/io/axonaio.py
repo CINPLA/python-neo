@@ -156,7 +156,7 @@ class AxonaIO(BaseIO):
         for channel_group_file in channel_group_files:
             # increment before, because channel_groups start at 1
             self._channel_group_count += 1
-            group_id = self._channel_group_count
+            group_id = self._channel_group_count # TODO count from 0?
             with open(channel_group_file, "rb") as f:
                 channel_group_params = parse_header_and_leave_cursor(f)
                 num_chans = channel_group_params["num_chans"]
@@ -281,7 +281,8 @@ class AxonaIO(BaseIO):
                                      **params)
             spike_trains.append(spike_train)
             channel_index = self._channel_group_to_channel_index[channel_group_index]
-            unit = Unit()
+            spike_train.channel_index = channel_index
+            unit = Unit() # TODO unit can have several spiketrains, not necessarily relevant here though
             unit.spiketrains.append(spike_train)
             channel_index.units.append(unit)
 
