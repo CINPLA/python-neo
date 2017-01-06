@@ -75,11 +75,9 @@ def parse_header_and_leave_cursor(file_handle):
     return params
 
 
-
 def assert_end_of_data(file_handle):
     remaining_data = str(file_handle.read(), 'latin1')
     assert(remaining_data.strip() == "data_end")
-
 
 
 def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
@@ -93,7 +91,9 @@ def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
     The correctness of this mapping has been verified by contacting Axona.
     """
     if type(value) is np.ndarray and value.base is not None:
-        raise ValueError("Value passed to scale_analog_signal cannot be a numpy view because we need to convert the entire array to a quantity.")
+        raise ValueError("Value passed to scale_analog_signal cannot be a " +
+                         "numpy view because we need to convert the entire " +
+                         "array to a quantity.")
     max_value = 2**(8 * bytes_per_sample - 1)  # 128 when bytes_per_sample = 1
     result = (value / max_value) * (adc_fullscale_mv / gain)
     result = result
@@ -107,7 +107,8 @@ class AxonaIO(BaseIO):
     is_readable = True
     is_writable = False
 
-    supported_objects = [Block, Segment, AnalogSignal, ChannelIndex, SpikeTrain]
+    supported_objects = [Block, Segment, AnalogSignal, ChannelIndex,
+                         SpikeTrain]
 
     readable_objects = [Block, SpikeTrain]
 
@@ -125,8 +126,6 @@ class AxonaIO(BaseIO):
         """
         Arguments:
             filename : the filename
-            dataset: points to a specific dataset in the .kwik and .raw.kwd file,
-                     however this can be an issue to change in e.g. OpenElectrophy or Spykeviewer
         """
         BaseIO.__init__(self)
         self._absolute_filename = filename
@@ -141,13 +140,16 @@ class AxonaIO(BaseIO):
 
         params = parse_params(text)
 
-        self._adc_fullscale = float(params["ADC_fullscale_mv"]) * 1000.0 * pq.uV
+        self._adc_fullscale = (float(params["ADC_fullscale_mv"]) *
+                               1000.0 * pq.uV)
         self._duration = float(params["duration"]) * pq.s  # TODO convert from samples to seconds
         self._tracked_spots_count = int(params["tracked_spots"])
         self._params = params
 
         # TODO this file reading can be removed, perhaps?
-        channel_group_files = glob.glob(os.path.join(self._path, self._base_filename) + ".[0-9]*")
+        channel_group_files = glob.glob(os.path.join(self._path,
+                                                     self._base_filename) +
+                                        ".[0-9]*")
         self._channel_to_channel_index = {}
         self._channel_group_to_channel_index = {}
         self._channel_count = 0
@@ -156,7 +158,7 @@ class AxonaIO(BaseIO):
         for channel_group_file in channel_group_files:
             # increment before, because channel_groups start at 1
             self._channel_group_count += 1
-            group_id = self._channel_group_count # TODO count from 0?
+            group_id = self._channel_group_count  # TODO count from 0?
             with open(channel_group_file, "rb") as f:
                 channel_group_params = parse_header_and_leave_cursor(f)
                 num_chans = channel_group_params["num_chans"]
@@ -165,10 +167,12 @@ class AxonaIO(BaseIO):
                 for i in range(num_chans):
                     channel_id = self._channel_count + i
                     channel_ids.append(channel_id)
-                    channel_names.append("channel_{}_group_{}_internal_{}".format(channel_id, group_id, i))
-
-                channel_index = ChannelIndex(name='channel_group #{}'.format(group_id),
-                                             channel_names=np.array(channel_names, dtype="S"),
+                    channel_names.append("channel_{}_group_{}_internal_{}\
+                                         ".format(channel_id, group_id, i))
+                chan_name = 'channel_group #{}'.format(group_id)
+                channel_names = np.array(channel_names, dtype="S")
+                channel_index = ChannelIndex(name=chan_name,
+                                             channel_names=channel_names,
                                              index=np.array(channel_ids),
                                              **{'channel_group': group_id})
                 self._channel_indexes.append(channel_index)
@@ -233,7 +237,9 @@ class AxonaIO(BaseIO):
 
         spike_trains = []
 
-        channel_group_files = glob.glob(os.path.join(self._path, self._base_filename) + ".[0-9]*")
+        channel_group_files = glob.glob(os.path.join(self._path,
+                                                     self._base_filename) +
+                                        ".[0-9]*")
         for raw_filename in sorted(channel_group_files):
             with open(raw_filename, "rb") as f:
                 params = parse_header_and_leave_cursor(f)
@@ -253,17 +259,23 @@ class AxonaIO(BaseIO):
                 timestamp_dtype = ">u" + str(bytes_per_timestamp)
                 waveform_dtype = "<i" + str(bytes_per_sample)
 
-                dtype = np.dtype([("times", (timestamp_dtype, 1), 1), ("waveforms", (waveform_dtype, 1), samples_per_spike)])
+                dtype = np.dtype([("times", (timestamp_dtype, 1), 1),
+                                 ("waveforms", (waveform_dtype, 1),
+                                 samples_per_spike)])
 
-                data = np.fromfile(f, dtype=dtype, count=num_spikes * num_chans)
+                data = np.fromfile(f, dtype=dtype,
+                                   count=num_spikes * num_chans)
                 assert_end_of_data(f)
             # times are saved for each channel
             times = data["times"][::num_chans] / timebase
             assert len(times) == num_spikes
             waveforms = data["waveforms"]
-            # TODO ensure waveforms is properly reshaped
-            waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
-            waveforms = waveforms.astype(float)
+            waveforms = np.reshape(waveforms, (num_spikes, num_chans,
+                                               samples_per_spike))
+            # TODO HACK !!!! findout if recording is sig - ref or the other
+            # way around, this determines the way of the peak which should be
+            # possible to set in a parameter e.g. peak='negative'/'positive'
+            waveforms = -waveforms.astype(float)
 
             channel_gain_matrix = np.ones(waveforms.shape)
             for i in range(num_chans):
@@ -283,7 +295,7 @@ class AxonaIO(BaseIO):
             spike_trains.append(spike_train)
             channel_index = self._channel_group_to_channel_index[channel_group_index]
             spike_train.channel_index = channel_index
-            unit = Unit() # TODO unit can have several spiketrains, not necessarily relevant here though
+            unit = Unit() # TODO unit can have several spiketrains from different segments, not necessarily relevant here though
             unit.spiketrains.append(spike_train)
             channel_index.units.append(unit)
 
