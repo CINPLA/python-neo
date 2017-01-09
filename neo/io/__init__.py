@@ -18,6 +18,8 @@ Classes:
 
 .. autoclass:: neo.io.AxonIO
 
+.. autoclass:: neo.io.AxonaIO
+
 .. autoclass:: neo.io.BlackrockIO
 
 .. autoclass:: neo.io.BrainVisionIO
@@ -31,6 +33,8 @@ Classes:
 .. autoclass:: neo.io.ElanIO
 
 .. autoclass:: neo.io.ElphyIO
+
+.. autoclass:: neo.io.ExdirIO
 
 .. autoclass:: neo.io.IgorIO
 
@@ -51,6 +55,8 @@ Classes:
 .. autoclass:: neo.io.NeuroshareIO
 
 .. autoclass:: neo.io.NixIO
+
+.. autoclass:: neo.io.OpenEphysIO
 
 .. autoclass:: neo.io.PickleIO
 
@@ -96,6 +102,7 @@ from neo.io.alphaomegaio import AlphaOmegaIO
 from neo.io.asciisignalio import AsciiSignalIO
 from neo.io.asciispiketrainio import AsciiSpikeTrainIO
 from neo.io.axonio import AxonIO
+from neo.io.axonaio import AxonaIO
 from neo.io.blackrockio import BlackrockIO
 from neo.io.brainvisionio import BrainVisionIO
 from neo.io.brainwaredamio import BrainwareDamIO
@@ -104,6 +111,7 @@ from neo.io.brainwaresrcio import BrainwareSrcIO
 from neo.io.elanio import ElanIO
 #from neo.io.elphyio import ElphyIO
 from neo.io.exampleio import ExampleIO
+from neo.io.exdirio import ExdirIO
 from neo.io.igorproio import IgorIO
 from neo.io.klustakwikio import KlustaKwikIO
 from neo.io.kwikio import KwikIO
@@ -113,6 +121,7 @@ from neo.io.neomatlabio import NeoMatlabIO
 from neo.io.neuroexplorerio import NeuroExplorerIO
 from neo.io.neuroscopeio import NeuroScopeIO
 from neo.io.nixio import NixIO
+from neo.io.openephysio import OpenEphysIO
 from neo.io.pickleio import PickleIO
 from neo.io.plexonio import PlexonIO
 from neo.io.pynnio import PyNNNumpyIO
@@ -130,6 +139,7 @@ iolist = [
           AsciiSignalIO,
           AsciiSpikeTrainIO,
           AxonIO,
+          AxonaIO,
           BlackrockIO,
           BrainVisionIO,
           BrainwareDamIO,
@@ -138,6 +148,7 @@ iolist = [
           ElanIO,
           #ElphyIO,
           ExampleIO,
+          ExdirIO,
           IgorIO,
           KlustaKwikIO,
           KwikIO,
@@ -148,6 +159,7 @@ iolist = [
           NeuroExplorerIO,
           NeuroScopeIO,
           NeuroshareIO,
+          OpenEphysIO
           PickleIO,
           PlexonIO,
           PyNNNumpyIO,
