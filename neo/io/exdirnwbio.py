@@ -72,12 +72,6 @@ class ExdirIO(BaseIO):
         # TODO check if group exists
         self._processing = self._exdir_folder.require_group("processing")
 
-    def save(self, blk):
-        exdir_blk = self._exdir_folder.create_dataset('Block')
-        for seg in blk.segments:
-            exdir_seg = exdir_blk.create_dataset('Segment')
-
-
     def read_block(self,
                    lazy=False,
                    cascade=True):
