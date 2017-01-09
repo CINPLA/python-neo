@@ -51,10 +51,10 @@ else:
 from neo.io.baseio import BaseIO
 
 # to import from core
-from neo.core import (Segment, SpikeTrain, Unit, EpochArray, AnalogSignal,
-                      RecordingChannel, RecordingChannelGroup, Block,
-                      EventArray, IrregularlySampledSignal)
+from neo.core import (Segment, SpikeTrain, Unit, Epoch, AnalogSignal, Block,
+                      Event, IrregularlySampledSignal)
 import neo.io.tools
+
 
 class OpenEphysIO(BaseIO):
     """
@@ -68,28 +68,27 @@ class OpenEphysIO(BaseIO):
     is_writable = False # write is not supported
 
     supported_objects    = [ Block, Segment, AnalogSignal,
-                          RecordingChannel, RecordingChannelGroup,
-                          IrregularlySampledSignal, EventArray,
-                          EpochArray]
+                          IrregularlySampledSignal, Event,
+                          Epoch]
 
     # This class can return either a Block or a Segment
     # The first one is the default ( self.read )
     # These lists should go from highest object to lowest object because
     # common_io_test assumes it.
-    readable_objects  = [ Block ]
+    readable_objects = [Block]
 
     # This class is not able to write objects
-    writeable_objects   = [ ]
+    writeable_objects = []
 
-    has_header         = False
-    is_streameable     = False
+    has_header = False
+    is_streameable = False
 
-    name               = 'OpenEphys'
-    description        = 'This IO reads experimental data from a OpenEphys dataset'
-    extensions         = [ 'kwe' ]
+    name = 'OpenEphys'
+    description = 'This IO reads experimental data from a OpenEphys dataset'
+    extensions = ['kwe']
     mode = 'file'
 
-    def __init__(self, filename, dataset=0) :
+    def __init__(self, filename, dataset=0):
         """
         Arguments:
             filename : the filename
@@ -97,8 +96,8 @@ class OpenEphysIO(BaseIO):
             experimentNum : experiment number
         """
         BaseIO.__init__(self)
-        self._filename = os.path.abspath(filename)
-        self._path, file = os.path.split(self._filename)
+        self._filename = filename
+        self._path, file = os.path.split(filename)
         self._dataset = dataset
         if int(file[-5]) > 1:
             xmlfile = 'settings_' + file[-5] + '.xml'
@@ -154,31 +153,31 @@ class OpenEphysIO(BaseIO):
 
         blk = Block()
         if cascade:
-            seg = Segment( file_origin=self._path )
-            blk.segments += [ seg ]
+            seg = Segment(file_origin=self._path)
+            blk.segments += [seg]
 
-            if channel_index:
-                if type(channel_index) is int: channel_index = [ channel_index ]
-                if type(channel_index) is list: channel_index = np.array( channel_index )
-            else:
-                channel_index = np.arange(0,self._attrs['shape'][1])
-
-            rcg = RecordingChannelGroup(name='all channels',
-                                 channel_indexes=channel_index)
-            blk.recordingchannelgroups.append(rcg)
-
-            for idx in channel_index:
-                # read nested analosignal
-                ana = self.read_analogsignal(channel_index=idx,
-                                        lazy=lazy,
-                                        cascade=cascade,
-                                         )
-                chan = RecordingChannel(index=int(idx))
-                seg.analogsignals += [ ana ]
-                chan.analogsignals += [ ana ]
-                rcg.recordingchannels.append(chan)
-            seg.duration = (self._attrs['shape'][0]
-                          / self._attrs['kwe']['sample_rate']) * pq.s
+            # if channel_index:
+            #     if type(channel_index) is int: channel_index = [ channel_index ]
+            #     if type(channel_index) is list: channel_index = np.array( channel_index )
+            # else:
+            #     channel_index = np.arange(0,self._attrs['shape'][1])
+            #
+            # rcg = RecordingChannelGroup(name='all channels',
+            #                      channel_indexes=channel_index)
+            # blk.recordingchannelgroups.append(rcg)
+            #
+            # for idx in channel_index:
+            #     # read nested analosignal
+            #     ana = self.read_analogsignal(channel_index=idx,
+            #                             lazy=lazy,
+            #                             cascade=cascade,
+            #                              )
+            #     chan = RecordingChannel(index=int(idx))
+            #     seg.analogsignals += [ ana ]
+            #     chan.analogsignals += [ ana ]
+            #     rcg.recordingchannels.append(chan)
+            seg.duration = (self._attrs['shape'][0] /
+                            self._attrs['kwe']['sample_rate']) * pq.s
 
             if lazy:
                 pass
@@ -186,79 +185,65 @@ class OpenEphysIO(BaseIO):
                 if tracking:
                     if tracking_ttl_chan is not None:
                         events, irsigs = self._get_tracking(channel=tracking_ttl_chan,
-                                                      conversion=1)
-                        seg.eventarrays += [ events ]
+                                                            conversion=1)
+                        seg.Events += [events]
                     else:
                         irsigs = self._get_tracking(channel=tracking_ttl_chan,
-                                                 conversion=1)
+                                                    conversion=1)
                     for irsig in irsigs:
-                        seg.irregularlysampledsignals += [ irsig ]
+                        seg.irregularlysampledsignals += [irsig]
                 if stim_ttl_chan is not None:
                     try:
                         for chan in stim_ttl_chan:
                             epo = self._get_stim(channel=chan)
-                            seg.epocharrays += [ epo ]
+                            seg.epochs += [epo]
                     except:
                         epo = self._get_stim(channel=stim_ttl_chan)
-                        seg.epocharrays += [ epo ]
+                        seg.epochs += [epo]
 
             # neo.tools.populate_RecordingChannel(blk)
         blk.create_many_to_one_relationship()
         return blk
 
-    def _get_tracking(self,channel,conversion):
+    def _get_tracking(self, channel, conversion):
 
         if channel is not None:
-            eva = EventArray()
+            eva = Event()
             ttls = self._kwe['event_types']['TTL']['events']['time_samples'].value
-            event_channels = self._kwe['event_types']['TTL']['events']\
-                                      ['user_data']['event_channels'].value
-            event_id = self._kwe['event_types']['TTL']['events']\
-                                      ['user_data']['eventID'].value
-            eva.times = (ttls[(event_channels==channel) & (event_id==1)]  \
-                        / self._attrs['kwe']['sample_rate']) * pq.s
+            event_channels = self._kwe['event_types']['TTL']['events'] ['user_data']['event_channels'].value
+            event_id = self._kwe['event_types']['TTL']['events'] ['user_data']['eventID'].value
+            eva.times = (ttls[(event_channels==channel) & (event_id == 1)] /
+                         self._attrs['kwe']['sample_rate']) * pq.s
             eva.name = 'TrackingTTL'
 
-        posdata = self._kwe['event_types']['Binary_messages']['events'] \
-                        ['user_data']['Data'].value
-        node_id = self._kwe['event_types']['Binary_messages']['events'] \
-                        ['user_data']['nodeID'].value
-        time_samples = self._kwe['event_types']['Binary_messages']['events'] \
-                        ['time_samples'].value
+        posdata = self._kwe['event_types']['Binary_messages']['events']['user_data']['Data'].value
+        node_id = self._kwe['event_types']['Binary_messages']['events']['user_data']['nodeID'].value
+        time_samples = self._kwe['event_types']['Binary_messages']['events']['time_samples'].value
         sigs = []
         for node in self._nodes['OSC Port']:
             irsig = IrregularlySampledSignal(
-                signal = posdata[node_id==int(node['NodeId'])] * conversion * pq.m,
-                times = (time_samples[node_id==int(node['NodeId'])] \
-                          / self._attrs['kwe']['sample_rate']) * pq.s,
-                name = node['address']
+                signal=posdata[node_id == int(node['NodeId'])] * conversion * pq.m,
+                times=(time_samples[node_id == int(node['NodeId'])] / self._attrs['kwe']['sample_rate']) * pq.s,
+                name=node['address']
             )
-            sigs += [ irsig ]
+            sigs += [irsig]
         if channel is not None:
             return eva, sigs
         else:
             return sigs
 
-    def _get_stim(self,channel):
-        epo = EpochArray()
+    def _get_stim(self, channel):
+        epo = Epoch()
         ttls = self._kwe['event_types']['TTL']['events']['time_samples'].value
-        event_channels = self._kwe['event_types']['TTL']['events']\
-                                  ['user_data']['event_channels'].value
-        event_id = self._kwe['event_types']['TTL']['events']\
-                                  ['user_data']['eventID'].value
-        epo.times = (ttls[(event_channels==channel) & (event_id==1)]  \
-                    / self._attrs['kwe']['sample_rate']) * pq.s
-        off_times = (ttls[(event_channels==channel) & (event_id==0)]  \
-                    / self._attrs['kwe']['sample_rate']) * pq.s
-        epo.durations = off_times - epo.times # TODO check length match
+        event_channels = self._kwe['event_types']['TTL']['events']['user_data']['event_channels'].value
+        event_id = self._kwe['event_types']['TTL']['events']['user_data']['eventID'].value
+        epo.times = (ttls[(event_channels == channel) & (event_id==1)] / self._attrs['kwe']['sample_rate']) * pq.s
+        off_times = (ttls[(event_channels == channel) & (event_id==0)] / self._attrs['kwe']['sample_rate']) * pq.s
+        epo.durations = off_times - epo.times  # TODO check length match
         epo.name = 'StimulusTTL'
         return epo
 
-    def read_analogsignal(self,
-                      channel_index=None,
-                      lazy=False,
-                      cascade=True,
-                      ):
+    def read_analogsignal(self, channel_index=None, lazy=False, cascade=True):
         """
         Read raw traces
         Arguments:
@@ -267,31 +252,31 @@ class OpenEphysIO(BaseIO):
         try:
             channel_index = int(channel_index)
         except TypeError:
-            print('channel_index must be int, not %s' %type(channel_index))
+            print('channel_index must be int, not %s' % type(channel_index))
 
         bit_volts = self._attrs['app_data']['channel_bit_volts']
         sig_unit = 'uV'
         if lazy:
             anasig = AnalogSignal([],
                                   units=sig_unit,
-                                  sampling_rate=self._attrs['kwe']['sample_rate']*pq.Hz,
-                                  t_start=self._attrs['kwe']['start_time']*pq.s,
+                                  sampling_rate=self._attrs['kwe']['sample_rate'] * pq.Hz,
+                                  t_start=self._attrs['kwe']['start_time'] * pq.s,
                                   channel_index=channel_index,
                                   name=self._nodes['Rhythm FPGA'][0]['chanNames'][channel_index]
                                   )
             # we add the attribute lazy_shape with the size if loaded
             anasig.lazy_shape = self._attrs['shape'][0]
         else:
-            data = self._kwd['recordings'][str(self._dataset)]['data'].value[:,channel_index]
+            data = self._kwd['recordings'][str(self._dataset)]['data'].value[:, channel_index]
             data = data * bit_volts[channel_index]
             anasig = AnalogSignal(data,
-                                       units=sig_unit,
-                                       sampling_rate=self._attrs['kwe']['sample_rate']*pq.Hz,
-                                       t_start=self._attrs['kwe']['start_time']*pq.s,
-                                       channel_index=channel_index,
-                                       name=self._nodes['Rhythm FPGA'][0]['chanNames'][channel_index]
-                                       )
-            data = [] # delete from memory
+                                  units=sig_unit,
+                                  sampling_rate=self._attrs['kwe']['sample_rate']*pq.Hz,
+                                  t_start=self._attrs['kwe']['start_time']*pq.s,
+                                  channel_index=channel_index,
+                                  name=self._nodes['Rhythm FPGA'][0]['chanNames'][channel_index]
+                                  )
+            data = []  # delete from memory
         # for attributes out of neo you can annotate
         anasig.annotate(info='raw trace')
         return anasig
