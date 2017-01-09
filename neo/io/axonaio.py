@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+
 """
 Class for reading data from an Axona dataset
 Depends on: scipy
@@ -10,6 +11,7 @@ Authors: Milad H. Mobarhan @CINPLA,
          Svenn-Arne Dragly @CINPLA,
          Mikkel E. Lepperød @CINPLA
 """
+
 
 from __future__ import division
 from __future__ import print_function
@@ -89,7 +91,9 @@ def scale_analog_signal(value, gain, adc_fullscale_mv, bytes_per_sample):
     The correctness of this mapping has been verified by contacting Axona.
     """
     if type(value) is np.ndarray and value.base is not None:
-        raise ValueError("Value passed to scale_analog_signal cannot be a numpy view because we need to convert the entire array to a quantity.")
+        raise ValueError("Value passed to scale_analog_signal cannot be a " +
+                         "numpy view because we need to convert the entire " +
+                         "array to a quantity.")
     max_value = 2**(8 * bytes_per_sample - 1)  # 128 when bytes_per_sample = 1
     result = (value / max_value) * (adc_fullscale_mv / gain)
     result = result
@@ -103,7 +107,8 @@ class AxonaIO(BaseIO):
     is_readable = True
     is_writable = False
 
-    supported_objects = [Block, Segment, AnalogSignal, ChannelIndex, SpikeTrain]
+    supported_objects = [Block, Segment, AnalogSignal, ChannelIndex,
+                         SpikeTrain]
 
     readable_objects = [Block, SpikeTrain]
 
@@ -121,8 +126,6 @@ class AxonaIO(BaseIO):
         """
         Arguments:
             filename : the filename
-            dataset: points to a specific dataset in the .kwik and .raw.kwd file,
-                     however this can be an issue to change in e.g. OpenElectrophy or Spykeviewer
         """
         BaseIO.__init__(self)
         self._absolute_filename = filename
@@ -137,23 +140,25 @@ class AxonaIO(BaseIO):
 
         params = parse_params(text)
 
-        self._adc_fullscale = float(params["ADC_fullscale_mv"]) * 1000.0 * pq.uV
+        self._adc_fullscale = (float(params["ADC_fullscale_mv"]) *
+                               1000.0 * pq.uV)
         self._duration = float(params["duration"]) * pq.s  # TODO convert from samples to seconds
         self._tracked_spots_count = int(params["tracked_spots"])
         self._params = params
-        
+
         # TODO this file reading can be removed, perhaps?
-        channel_group_files = glob.glob(os.path.join(self._path, self._base_filename) + ".[0-9]*")
-        
-        self._channel_to_channel_index = {}  
+        channel_group_files = glob.glob(os.path.join(self._path,
+                                                     self._base_filename) +
+                                        ".[0-9]*")
+        self._channel_to_channel_index = {}
         self._channel_group_to_channel_index = {}
         self._channel_count = 0
         self._channel_group_count = 0
-        self._channel_indexes = []            
+        self._channel_indexes = []
         for channel_group_file in channel_group_files:
             # increment before, because channel_groups start at 1
             self._channel_group_count += 1
-            group_id = self._channel_group_count
+            group_id = self._channel_group_count  # TODO count from 0?
             with open(channel_group_file, "rb") as f:
                 channel_group_params = parse_header_and_leave_cursor(f)
                 num_chans = channel_group_params["num_chans"]
@@ -162,24 +167,26 @@ class AxonaIO(BaseIO):
                 for i in range(num_chans):
                     channel_id = self._channel_count + i
                     channel_ids.append(channel_id)
-                    channel_names.append("channel_{}_group_{}_internal_{}".format(channel_id, group_id, i))
-                
-                channel_index = ChannelIndex(group_id, 
-                                             channel_names=np.array(channel_names, dtype="S"),
-                                             channel_ids=np.array(channel_ids))
+                    channel_names.append("channel_{}_group_{}_internal_{}\
+                                         ".format(channel_id, group_id, i))
+                chan_name = 'channel_group #{}'.format(group_id)
+                channel_names = np.array(channel_names, dtype="S")
+                channel_index = ChannelIndex(name=chan_name,
+                                             channel_names=channel_names,
+                                             index=np.array(channel_ids),
+                                             **{'channel_group': group_id})
                 self._channel_indexes.append(channel_index)
                 self._channel_group_to_channel_index[group_id] = channel_index
-                
+
                 for i in range(num_chans):
                     channel_id = self._channel_count + i
                     self._channel_to_channel_index[channel_id] = channel_index
-                    
                 # increment after, because channels start at 0
                 self._channel_count += num_chans
-        
+
         # TODO add channels only for files that exist
         self._channel_ids = np.arange(self._channel_count)
-        
+
         # TODO read the set file and store necessary values as attributes on this object
 
     def _channel_gain(self, channel_group_index, channel_index):
@@ -192,19 +199,17 @@ class AxonaIO(BaseIO):
                    lazy=False,
                    cascade=True):
         """
-        Arguments:
-            Channel_index: can be int, iterable or None to select one, many or all channel(s)
 
         """
 
         blk = Block()
         if cascade:
             seg = Segment(file_origin=self._absolute_filename)
-            
+
             blk.channel_indexes = self._channel_indexes
-            
+
             blk.segments += [seg]
-        
+
             seg.analogsignals = self.read_analogsignal(lazy=lazy, cascade=cascade)
             seg.irregularlysampledsignals = self.read_tracking()
             seg.spiketrains = self.read_spiketrain()
@@ -214,9 +219,9 @@ class AxonaIO(BaseIO):
             seg.duration = self._duration
 
             # TODO May need to "populate_RecordingChannel"
-            
+
             # spiketrain = self.read_spiketrain()
-            
+
             # seg.spiketrains.append()
 
         blk.create_many_to_one_relationship()
@@ -229,10 +234,12 @@ class AxonaIO(BaseIO):
     def read_spiketrain(self):
         # TODO add parameter to allow user to read raw data or not?
         assert(SpikeTrain in self.readable_objects)
-        
+
         spike_trains = []
-        
-        channel_group_files = glob.glob(os.path.join(self._path, self._base_filename) + ".[0-9]*")
+
+        channel_group_files = glob.glob(os.path.join(self._path,
+                                                     self._base_filename) +
+                                        ".[0-9]*")
         for raw_filename in sorted(channel_group_files):
             with open(raw_filename, "rb") as f:
                 params = parse_header_and_leave_cursor(f)
@@ -244,41 +251,51 @@ class AxonaIO(BaseIO):
                 num_chans = params.get("num_chans", 1)
                 samples_per_spike = params.get("samples_per_spike", 50)
                 timebase = int(params.get("timebase", "96000 hz").split(" ")[0]) * pq.Hz
-
+                sampling_rate = params.get("rawrate", 48000) * pq.Hz
                 bytes_per_spike_without_timestamp = samples_per_spike * bytes_per_sample
                 bytes_per_spike = bytes_per_spike_without_timestamp + bytes_per_timestamp
 
                 timestamp_dtype = ">u" + str(bytes_per_timestamp)
                 waveform_dtype = "<i" + str(bytes_per_sample)
 
-                dtype = np.dtype([("times", (timestamp_dtype, 1), 1), ("waveforms", (waveform_dtype, 1), samples_per_spike)])
+                dtype = np.dtype([("times", (timestamp_dtype, 1), 1),
+                                 ("waveforms", (waveform_dtype, 1),
+                                 samples_per_spike)])
 
-                data = np.fromfile(f, dtype=dtype, count=num_spikes * num_chans)
+                data = np.fromfile(f, dtype=dtype,
+                                   count=num_spikes * num_chans)
                 assert_end_of_data(f)
 
-            times = data["times"][::4] / timebase  # time for each waveform is the same, so we take each fourth time
+            # times are saved for each channel
+            times = data["times"][::num_chans] / timebase
+            assert len(times) == num_spikes
             waveforms = data["waveforms"]
-            # TODO ensure waveforms is properly reshaped
-            waveforms = waveforms.reshape(num_spikes, num_chans, samples_per_spike)
-            waveforms = waveforms.astype(float)
+            waveforms = np.reshape(waveforms, (num_spikes, num_chans,
+                                               samples_per_spike))
+            # TODO HACK !!!! findout if recording is sig - ref or the other
+            # way around, this determines the way of the peak which should be
+            # possible to set in a parameter e.g. peak='negative'/'positive'
+            waveforms = -waveforms.astype(float)
 
             channel_gain_matrix = np.ones(waveforms.shape)
             for i in range(num_chans):
                 channel_gain_matrix[:, i, :] *= self._channel_gain(channel_group_index, i)
-
             waveforms = scale_analog_signal(waveforms,
                                             channel_gain_matrix,
                                             self._adc_fullscale,
                                             bytes_per_sample)
 
-            # TODO get proper t_stop
-            spike_train = SpikeTrain(times, 
-                                     t_stop=times[-1],
-                                     waveforms=waveforms, 
+            # TODO get left_sweep form setfile?
+            spike_train = SpikeTrain(times,
+                                     t_stop=self._duration,
+                                     waveforms=waveforms,
+                                     sampling_rate=sampling_rate,
+                                     left_sweep=0.2*pq.ms,
                                      **params)
             spike_trains.append(spike_train)
             channel_index = self._channel_group_to_channel_index[channel_group_index]
-            unit = Unit()
+            spike_train.channel_index = channel_index
+            unit = Unit() # TODO unit can have several spiketrains from different segments, not necessarily relevant here though
             unit.spiketrains.append(spike_train)
             channel_index.units.append(unit)
 
@@ -296,7 +313,7 @@ class AxonaIO(BaseIO):
 
         with open(pos_filename, "rb") as f:
             params = parse_header_and_leave_cursor(f)
-            print(params)
+            # print(params)
 
             sample_rate_split = params["sample_rate"].split(" ")
             assert(sample_rate_split[1] == "hz")
@@ -342,7 +359,7 @@ class AxonaIO(BaseIO):
                                                       time_units="s",
                                                       **params)
                 irr_signals.append(irr_signal)
-                
+
                 # TODO add this signal to a channel index?
             return irr_signals
 
@@ -355,12 +372,12 @@ class AxonaIO(BaseIO):
         Arguments:
             channel_index: must be integer array
         """
-        
+
         # TODO read for specific channel
 
         # TODO check that .egf file exists
 
-        
+
         analog_signals = []
         eeg_basename = os.path.join(self._path, self._base_filename)
         eeg_files = glob.glob(eeg_basename + ".eeg")
@@ -377,14 +394,14 @@ class AxonaIO(BaseIO):
             with open(eeg_filename, "rb") as f:
                 params = parse_header_and_leave_cursor(f)
                 params["raw_filename"] = eeg_filename
-                
+
                 if file_type == "eeg":
                     sample_count = int(params["num_EEG_samples"])
                 elif file_type == "egf":
                     sample_count = int(params["num_EGF_samples"])
                 else:
                     raise IOError("Unknown file type. Should be .eeg or .efg.")
-                    
+
                 sample_rate_split = params["sample_rate"].split(" ")
                 bytes_per_sample = params["bytes_per_sample"]
                 assert(sample_rate_split[1].lower() == "hz")
@@ -402,47 +419,47 @@ class AxonaIO(BaseIO):
                     sample_dtype = (('<i' + str(bytes_per_sample), 1), params["num_chans"])
                     data = np.fromfile(f, dtype=sample_dtype, count=sample_count)
                     assert_end_of_data(f)
-                    
                     eeg_final_channel_id = self._params["EEG_ch_" + str(suffix)]
                     eeg_mode = self._params["mode_ch_" + str(eeg_final_channel_id)]
                     ref_id = self._params["b_in_ch_" + str(eeg_final_channel_id)]
                     eeg_original_channel_id = self._params["ref_" + str(ref_id)]
-                    
+
                     params["channel_id"] = eeg_original_channel_id
-                    
+
                     gain = self._params["gain_ch_{}".format(eeg_final_channel_id)]
-                    
+
                     signal = scale_analog_signal(data,
-                                                 gain, 
-                                                 self._adc_fullscale, 
+                                                 gain,
+                                                 self._adc_fullscale,
                                                  bytes_per_sample)
-                                                 
+
                     # TODO read start time
                     analog_signal = AnalogSignal(signal,
                                                  units="uV",  # TODO get correct unit
                                                  sampling_rate=sample_rate,
                                                  **params)
-                    
-                    # TODO what if read_analogsignal is called twice? The channel_index list should be cleared at some point                             
+
+                    # TODO what if read_analogsignal is called twice? The channel_index list should be cleared at some point
                     channel_index = self._channel_to_channel_index[eeg_original_channel_id]
                     channel_index.analogsignals.append(analog_signal)
-                    
+
                 analog_signals.append(analog_signal)
-                
+
         return analog_signals
 
 
 if __name__ == "__main__":
     import sys
+    # import quantities
     io = AxonaIO(sys.argv[1])
     # io.read_analogsignal()
     # io.read_spiketrain()
     # io.read_spiketrainlist()
     # io.read_tracking()
     block = io.read_block()
-    
+
     from neo.io.hdf5io import NeoHdf5IO
-    
+
     testfile = "/tmp/test.h5"
     try:
         os.remove("/tmp/test.h5")

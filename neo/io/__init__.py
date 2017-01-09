@@ -16,6 +16,8 @@ Classes:
 
 .. autoclass:: neo.io.AsciiSpikeTrainIO
 
+.. autoclass:: neo.io.AxonaIO
+
 .. autoclass:: neo.io.AxonIO
 
 .. autoclass:: neo.io.BlackrockIO
@@ -91,6 +93,7 @@ else:
 from neo.io.alphaomegaio import AlphaOmegaIO
 from neo.io.asciisignalio import AsciiSignalIO
 from neo.io.asciispiketrainio import AsciiSpikeTrainIO
+from neo.io.axonaio import AxonaIO
 from neo.io.axonio import AxonIO
 from neo.io.blackrockio import BlackrockIO
 from neo.io.brainvisionio import BrainVisionIO
@@ -123,6 +126,7 @@ iolist = [
           AlphaOmegaIO,
           AsciiSignalIO,
           AsciiSpikeTrainIO,
+          AxonaIO,
           AxonIO,
           BlackrockIO,
           BrainVisionIO,

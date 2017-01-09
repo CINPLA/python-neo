@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-
-Classe for reading data from pCLAMP and AxoScope
+Class for reading data from pCLAMP and AxoScope
 files (.abf version 1 and 2), developed by Molecular device/Axon technologies.
 
 - abf = Axon binary file
