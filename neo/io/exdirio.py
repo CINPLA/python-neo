@@ -25,11 +25,18 @@ import quantities as pq
 import os
 import glob
 import exdir
+import yaml
 
 python_version = sys.version_info.major
 if python_version == 2:
     from future.builtins import str
 
+def yaml_write(fname, data):
+    with open(fname, 'w') as outfile:
+        outfile.write(yaml.dump(data, default_flow_style=False))
+
+def unit_str(value):
+    return str(value.dimensionality)
 
 class ExdirIO(BaseIO):
     """
@@ -73,9 +80,31 @@ class ExdirIO(BaseIO):
         self._processing = self._exdir_folder.require_group("processing")
 
     def save(self, blk):
-        exdir_blk = self._exdir_folder.create_dataset('Block')
-        for seg in blk.segments:
-            exdir_seg = exdir_blk.create_dataset('Segment')
+        prc = self._processing
+        grps = {chx: [sptr for unit in chx.units for sptr in unit.spiketrains]
+                for chx in blk.channel_indexes}
+        for chx, sptrs in grps.items():
+            grp = chx.annotations['channel_group']
+            for sptr in sptrs: # TODO if no waveforms make an only timeseries group?
+                ch_group = prc.create_group('channel_group_{}'.format(grp))
+                event_wf = ch_group.create_group('EventWaveform')
+                # timeserie
+                wf_ts = event_wf.create_group('waveform_timeseries')
+                wf_ts.create_dataset('electrode_idx', chx.index)
+                # timestamps
+                ts = wf_ts.create_dataset("timestamps", sptr.times)
+                ts_attr = {'unit': unit_str(sptr.times),
+                           't_stop': {'value': float(sptr.t_stop),
+                                      'unit': unit_str(sptr.t_stop)},
+                            't_start': {'value': float(sptr.t_start),
+                                       'unit': unit_str(sptr.t_start)}}
+                yaml_write(ts.attributes_filename, ts_attr)
+                #  waveforms
+                wf = wf_ts.create_dataset("waveforms", sptr.waveforms)
+                wf_attr = {'unit': unit_str(sptr.waveforms),
+                           'sample_rate': {'value': float(sptr.sampling_rate),
+                                           'unit': unit_str(sptr.sampling_rate)}}
+                yaml_write(wf.attributes_filename, wf_attr)
 
 
     def read_block(self,
@@ -153,15 +182,23 @@ class ExdirIO(BaseIO):
             spike_train = SpikeTrain(
                 pq.Quantity(timestamps.data, timestamps.attrs["unit"]),
                 t_stop=pq.Quantity(
-                    timestamps.data[-1],
-                    timestamps.attrs["unit"]
+                    timestamps.attrs['t_stop']['value'],
+                    timestamps.attrs['t_stop']["unit"]
+                ),
+                t_start=pq.Quantity(
+                    timestamps.attrs['t_start']['value'],
+                    timestamps.attrs['t_start']["unit"]
                 ),
                 waveforms=pq.Quantity(
                     waveforms.data,
                     waveforms.attrs["unit"]
-                )
+                ),
+                sampling_rate=pq.Quantity(
+                    waveforms.attrs['sample_rate']['value'],
+                    waveforms.attrs['sample_rate']['unit']
+                ),
             )
-
+            # spike_train.channel_index =
             spike_trains.append(spike_train)
             # TODO: read attrs?
 
