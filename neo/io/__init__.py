@@ -159,7 +159,7 @@ iolist = [
           NeuroExplorerIO,
           NeuroScopeIO,
           NeuroshareIO,
-          OpenEphysIO
+          OpenEphysIO,
           PickleIO,
           PlexonIO,
           PyNNNumpyIO,
