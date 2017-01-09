@@ -237,8 +237,8 @@ class OpenEphysIO(BaseIO):
         ttls = self._kwe['event_types']['TTL']['events']['time_samples'].value
         event_channels = self._kwe['event_types']['TTL']['events']['user_data']['event_channels'].value
         event_id = self._kwe['event_types']['TTL']['events']['user_data']['eventID'].value
-        epo.times = (ttls[(event_channels == channel) & (event_id==1)] / self._attrs['kwe']['sample_rate']) * pq.s
-        off_times = (ttls[(event_channels == channel) & (event_id==0)] / self._attrs['kwe']['sample_rate']) * pq.s
+        epo.times = (ttls[(event_channels == channel) & (event_id == 1)] / self._attrs['kwe']['sample_rate']) * pq.s
+        off_times = (ttls[(event_channels == channel) & (event_id == 0)] / self._attrs['kwe']['sample_rate']) * pq.s
         epo.durations = off_times - epo.times  # TODO check length match
         epo.name = 'StimulusTTL'
         return epo
