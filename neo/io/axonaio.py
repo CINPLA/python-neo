@@ -169,12 +169,12 @@ class AxonaIO(BaseIO):
                     channel_ids.append(channel_id)
                     channel_names.append("channel_{}_group_{}_internal_{}\
                                          ".format(channel_id, group_id, i))
-                chan_name = 'channel_group #{}'.format(group_id)
+                chan_name = 'group_id #{}'.format(group_id)
                 channel_names = np.array(channel_names, dtype="S")
                 channel_index = ChannelIndex(name=chan_name,
                                              channel_names=channel_names,
                                              index=np.array(channel_ids),
-                                             **{'channel_group': group_id})
+                                             **{'group_id': group_id})
                 self._channel_indexes.append(channel_index)
                 self._channel_group_to_channel_index[group_id] = channel_index
 
@@ -288,7 +288,7 @@ class AxonaIO(BaseIO):
             # TODO get left_sweep form setfile?
             spike_train = SpikeTrain(times,
                                      t_stop=self._duration,
-                                     waveforms=waveforms,
+                                     waveforms=waveforms*pq.uV,
                                      sampling_rate=sampling_rate,
                                      left_sweep=0.2*pq.ms,
                                      **params)
