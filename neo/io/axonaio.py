@@ -65,7 +65,8 @@ def parse_header_and_leave_cursor(file_handle):
         header += str(byte, 'latin-1')
 
         if not byte:
-            raise IOError("Hit end of file '" + eeg_filename + "'' before '" + search_string + "' found.")
+            raise IOError("Hit end of file '" + eeg_filename + "'' before '" +
+                          search_string + "' found.")
 
         if header[-len(search_string):] == search_string:
             break
