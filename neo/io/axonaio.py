@@ -65,7 +65,7 @@ def parse_header_and_leave_cursor(file_handle):
         header += str(byte, 'latin-1')
 
         if not byte:
-            raise IOError("Hit end of file '" + eeg_filename + "'' before '" +
+            raise IOError("Hit end of file '" + file_handle + "'' before '" +
                           search_string + "' found.")
 
         if header[-len(search_string):] == search_string:
@@ -212,7 +212,11 @@ class AxonaIO(BaseIO):
             blk.segments += [seg]
 
             seg.analogsignals = self.read_analogsignal(lazy=lazy, cascade=cascade)
-            seg.irregularlysampledsignals = self.read_tracking()
+            try:
+                seg.irregularlysampledsignals = self.read_tracking()
+            except Exception as e:
+                print('Warning: unable to read tracking')
+                print(e)
             seg.spiketrains = self.read_spiketrain()
 
             # TODO Call all other read functions
