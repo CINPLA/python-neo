@@ -141,8 +141,9 @@ class ExdirIO(BaseIO):
         for seg_idx, seg in enumerate(blk.segments):
             t_start = seg.t_start
             t_stop = seg.t_stop
-            seg_name = 'Segment_{}'.format(seg_idx)
+            seg_name = seg.name or 'Segment_{}'.format(seg_idx)
             seg_group = self._processing.create_group(seg_name)
+            seg_group.attrs['duration'] = t_stop - t_start
             chxs = set([st.channel_index for st in seg.spiketrains]) # TODO must check if this makes sense
             # TODO sort indexes in case group_id is not provided
             for group_id, chx in enumerate(chxs):
@@ -168,7 +169,7 @@ class ExdirIO(BaseIO):
                 self._save_clusters(spike_clusters, ch_group, t_start, t_stop)
 
                 self._save_unit_times(sptrs, ch_group, t_start, t_stop)
-                
+
                 # TODO save analogsignals
                 # TODO save epochs
 
@@ -177,7 +178,7 @@ class ExdirIO(BaseIO):
                    cascade=True):
         '''
         if you have several segments, cluster nums are assumed to be unique,
-        thus if two clusters have same num they are assumed to be of same 
+        thus if two clusters have same num they are assumed to be of same
         neo.Unit and their spiketrains are appended.
         '''
         # TODO read block
@@ -185,14 +186,16 @@ class ExdirIO(BaseIO):
         if cascade:
             for prc_name, prc_group in self._processing.items():
                 if('Segment' in prc_name):
+                    duration = get_quantity_attr(prc_group, 'duration')
                     seg = Segment(name=prc_name)
+                    seg.duration = duration # TODO BUG in neo, cannot be set as argument
                     blk.segments.append(seg)
                 for prc_sub_name, prc_sub_group in prc_group.items():
                     if(prc_sub_name == "Position"):
                         self.read_tracking(group=prc_sub_group)
                     if('channel_group' in prc_sub_name):
                         chx = self._get_channel_index(group=prc_sub_group)
-                        
+                        blk.channel_indexes.append(chx)
                         anas = self.read_analogsignals(group=prc_sub_group)
                         if anas is not None:
                             seg.analogsignals.extend(anas)
@@ -200,22 +203,21 @@ class ExdirIO(BaseIO):
                             for ana in anas:
                                 ana.channel_index = chx
 
-                        sptrs, names = \
-                            self.read_event_waveform(group=prc_sub_group)
+                        sptrs = self.read_event_waveform(group=prc_sub_group)
                         if sptrs is None:
-                            sptrs, names = \
-                                self.read_unit_times(group=prc_sub_group)
+                            sptrs = self.read_unit_times(group=prc_sub_group)
                         if sptrs is not None:
                             seg.spiketrains.extend(sptrs)
-                            for sptr, name in zip(sptrs, names):
+                            for sptr in sptrs:
                                 sptr.channel_index = chx
-                                units = {unit.name: unit
+                                cluster_id = sptr.annotations['cluster_id']
+                                units = {unit.annotations['cluster_id']: unit
                                          for unit in chx.units}
-                                if name in units:
-                                    unit = units[name]
+                                if cluster_id in units:
+                                    unit = units[cluster_id]
                                 else:
-                                    unit = Unit(name='Unit #{}'.format(name),
-                                                **{'cluster_id': name})
+                                    unit = Unit(name='Unit #{}'.format(cluster_id),
+                                                **{'cluster_id': cluster_id})
                                     chx.units.append(unit)
                                 unit.spiketrains.append(sptr)
 
@@ -275,13 +277,12 @@ class ExdirIO(BaseIO):
         elif 'EventWaveform' in group.keys():
             group = group['EventWaveform']
         else:
-            return None, None
+            return None
         spike_trains = []
         clustering_name = '/'.join(group.name.split('/')[:-1]) + '/Clustering'
         clustering = self._exdir_folder[clustering_name]
         for key, value in group.items():
             clusters = clustering["nums"].data
-            unit_names = []
             for cluster in np.unique(clusters):
                 indices, = np.where(clusters == cluster)
                 spike_train = SpikeTrain(
@@ -293,11 +294,11 @@ class ExdirIO(BaseIO):
                                            value["waveforms"]),
                     sampling_rate=get_quantity_attr(value["waveforms"],
                                                     'sample_rate'),
+                    **{'cluster_id': cluster}
                     )
                 spike_trains.append(spike_train)
-                unit_names.append(cluster)
             # TODO: read attrs?
-        return spike_trains, unit_names
+        return spike_trains
 
     def read_unit_times(self, group):
         if group.name.split('/')[-1] == 'UnitTimes':
@@ -305,19 +306,18 @@ class ExdirIO(BaseIO):
         elif 'UnitTimes' in group.keys():
             group = group['UnitTimes']
         else:
-            return None, None
+            return None
         spike_trains = []
-        unit_names = []
-        for key, value in group.items():
+        for value in group.values():
             spike_train = SpikeTrain(
                 times=get_quantity(value.data[indices], timestamps),
                 t_stop=get_quantity_attr(value, 'stop_time'),
                 t_start=get_quantity_attr(value, 'start_time'),
+                **{'cluster_id': cluster}
                 )
             spike_trains.append(spike_train)
-            unit_names.append(key)
             # TODO: read attrs?
-        return spike_trains, unit_names
+        return spike_trains
 
     def read_epoch(self):
         print('Warning: "read_epoch" not implemented')
