@@ -121,10 +121,8 @@ class ExdirIO(BaseIO):
         cl_group = channel_group.create_group('Clustering')
         cl_group.attrs['start_time'] = t_start
         cl_group.attrs['stop_time'] = t_stop
-        if cluster_groups is not None:
-            for key, val in cluster_groups.items():
-                cl_group.attrs[key] = val
         cluster_nums = np.unique(spike_clusters)
+        cl_group.attrs['cluster_groups'] = cluster_groups
         cl_data = cl_group.create_dataset('cluster_nums', cluster_nums)
         cl_data = cl_group.create_dataset('nums', spike_clusters)
 
@@ -144,6 +142,16 @@ class ExdirIO(BaseIO):
 
     def save(self, blk):
         # TODO save block annotations
+        # TODO add clustering version, type, algorithm etc.
+        if not all(['group_id' in chx.annotations
+                    for chx in blk.channel_indexes]):
+            print('Warning "group_id" is not in channel_index.annotations ' +
+                  'counts channel_group as appended to Block.channel_indexes')
+            channel_indexes = {i: chx for i, chx in
+                               enumerate(blk.channel_indexes)}
+        else:
+            channel_indexes = {int(chx.annotations['group_id']): chx
+                               for chx in blk.channel_indexes}
         for seg_idx, seg in enumerate(blk.segments):
             t_start = seg.t_start
             t_stop = seg.t_stop
@@ -152,9 +160,7 @@ class ExdirIO(BaseIO):
             for key, val in seg.annotations.items():
                 seg_group.attrs[key] = val
             seg_group.attrs['duration'] = t_stop - t_start
-            chxs = set([st.channel_index for st in seg.spiketrains]) # TODO must check if this makes sense
-            # TODO sort indexes in case group_id is not provided
-            for group_id, chx in enumerate(chxs):
+            for group_id, chx in channel_indexes.items():
                 grp = chx.annotations['group_id'] or group_id
                 grp_name = 'channel_group_{}'.format(grp)
                 ch_group = seg_group.create_group(grp_name)
@@ -164,7 +170,6 @@ class ExdirIO(BaseIO):
                 sptrs = [st for st in seg.spiketrains
                          if st.channel_index == chx]
                 sampling_rate = sptrs[0].sampling_rate.rescale('Hz')
-                # self.sorted_idxs = np.argsort(times)
                 spike_times = self._sptrs_to_times(sptrs)
                 ns, = spike_times.shape
                 num_chans = len(chx.index)
@@ -176,9 +181,11 @@ class ExdirIO(BaseIO):
 
                 spike_clusters = self._sptrs_to_spike_clusters(sptrs)
                 assert spike_clusters.shape == (ns,)
-                cluster_groups = None
                 if 'group' in chx.annotations:
                     cluster_groups = chx.annotations['group']
+                else:
+                    cluster_groups = {int(cl): 'Unsorted'
+                                      for cl in np.unique(spike_clusters)}
                 self._save_clusters(spike_clusters, ch_group, t_start, t_stop,
                                     cluster_groups)
 
@@ -195,7 +202,7 @@ class ExdirIO(BaseIO):
         thus if two clusters have same num they are assumed to be of same
         neo.Unit and their spiketrains are appended.
         '''
-        # TODO read block
+        # TODO read_block with annotations
         blk = Block(file_origin=self._absolute_folder_path)
         if cascade:
             for prc_name, prc_group in self._processing.items():
@@ -235,7 +242,6 @@ class ExdirIO(BaseIO):
                                     chx.units.append(unit)
                                 unit.spiketrains.append(sptr)
 
-            # TODO add duration
             # TODO May need to "populate_RecordingChannel"
 
         return blk
@@ -296,14 +302,18 @@ class ExdirIO(BaseIO):
         clustering_name = '/'.join(group.name.split('/')[:-1]) + '/Clustering'
         clustering = self._exdir_folder[clustering_name]
         for key, value in group.items():
-            clusters = clustering["nums"].data
-            for cluster in np.unique(clusters):
-                indices, = np.where(clusters == cluster)
-                metadata = {'cluster_id': cluster}
-                metadata.update(value["timestamps"].attrs)
-                metadata.update(value["waveforms"].attrs)
-                metadata.update(group.attrs)
-                # TODO if groups in clustering get them
+            spike_clusters = clustering["nums"].data
+            for cluster in np.unique(spike_clusters):
+                indices, = np.where(spike_clusters == cluster)
+                cluster_group = clustering.attrs['cluster_groups'][cluster]
+                timestamp_attributes = {key: value for key, value in
+                                        value["timestamps"].attrs.items()}
+                waveform_attributes = {key: value for key, value in
+                                        value["waveforms"].attrs.items()}
+                metadata = {'cluster_id': cluster,
+                            'cluster_group': cluster_group, # TODO add clustering version, type, algorithm etc.
+                            'timestamp_attributes': timestamp_attributes,
+                            'waveform_attributes': waveform_attributes}
                 spike_train = SpikeTrain(
                     times=get_quantity(value["timestamps"].data[indices],
                                        value["timestamps"]),
@@ -316,7 +326,6 @@ class ExdirIO(BaseIO):
                     **metadata
                     )
                 spike_trains.append(spike_train)
-            # TODO: read attrs?
         return spike_trains
 
     def read_unit_times(self, group):
@@ -332,10 +341,11 @@ class ExdirIO(BaseIO):
                 times=get_quantity(value.data[indices], timestamps),
                 t_stop=get_quantity_attr(value, 'stop_time'),
                 t_start=get_quantity_attr(value, 'start_time'),
-                **{'cluster_id': cluster}
+                **{'cluster_id': cluster,
+                   'cluster_group': value.attrs['cluster_group'], # TODO add clustering version, type, algorithm etc.
+                   }
                 )
             spike_trains.append(spike_train)
-            # TODO: read attrs?
         return spike_trains
 
     def read_epoch(self):
