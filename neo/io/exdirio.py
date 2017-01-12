@@ -117,10 +117,13 @@ class ExdirIO(BaseIO):
         wf.attrs['sample_rate'] = sampling_rate
 
     def _save_clusters(self, spike_clusters, channel_group, t_start,
-                       t_stop):
+                       t_stop, cluster_groups):
         cl_group = channel_group.create_group('Clustering')
         cl_group.attrs['start_time'] = t_start
         cl_group.attrs['stop_time'] = t_stop
+        if cluster_groups is not None:
+            for key, val in cluster_groups.items():
+                cl_group.attrs[key] = val
         cluster_nums = np.unique(spike_clusters)
         cl_data = cl_group.create_dataset('cluster_nums', cluster_nums)
         cl_data = cl_group.create_dataset('nums', spike_clusters)
@@ -135,14 +138,19 @@ class ExdirIO(BaseIO):
             else:
                 sptr_id = idx
             times_group = unit_times_group.create_group('{}'.format(sptr_id))
+            for key, val in sptr.annotations.items():
+                times_group.attrs[key] = val
             ts_data = times_group.create_dataset('times', sptr.times)
 
     def save(self, blk):
+        # TODO save block annotations
         for seg_idx, seg in enumerate(blk.segments):
             t_start = seg.t_start
             t_stop = seg.t_stop
             seg_name = seg.name or 'Segment_{}'.format(seg_idx)
             seg_group = self._processing.create_group(seg_name)
+            for key, val in seg.annotations.items():
+                seg_group.attrs[key] = val
             seg_group.attrs['duration'] = t_stop - t_start
             chxs = set([st.channel_index for st in seg.spiketrains]) # TODO must check if this makes sense
             # TODO sort indexes in case group_id is not provided
@@ -151,6 +159,8 @@ class ExdirIO(BaseIO):
                 grp_name = 'channel_group_{}'.format(grp)
                 ch_group = seg_group.create_group(grp_name)
                 ch_group.attrs['electrode_idx'] = chx.index
+                for key, val in chx.annotations.items():
+                    ch_group.attrs[key] = val
                 sptrs = [st for st in seg.spiketrains
                          if st.channel_index == chx]
                 sampling_rate = sptrs[0].sampling_rate.rescale('Hz')
@@ -166,7 +176,11 @@ class ExdirIO(BaseIO):
 
                 spike_clusters = self._sptrs_to_spike_clusters(sptrs)
                 assert spike_clusters.shape == (ns,)
-                self._save_clusters(spike_clusters, ch_group, t_start, t_stop)
+                cluster_groups = None
+                if 'group' in chx.annotations:
+                    cluster_groups = chx.annotations['group']
+                self._save_clusters(spike_clusters, ch_group, t_start, t_stop,
+                                    cluster_groups)
 
                 self._save_unit_times(sptrs, ch_group, t_start, t_stop)
 
@@ -285,6 +299,11 @@ class ExdirIO(BaseIO):
             clusters = clustering["nums"].data
             for cluster in np.unique(clusters):
                 indices, = np.where(clusters == cluster)
+                metadata = {'cluster_id': cluster}
+                metadata.update(value["timestamps"].attrs)
+                metadata.update(value["waveforms"].attrs)
+                metadata.update(group.attrs)
+                # TODO if groups in clustering get them
                 spike_train = SpikeTrain(
                     times=get_quantity(value["timestamps"].data[indices],
                                        value["timestamps"]),
@@ -294,7 +313,7 @@ class ExdirIO(BaseIO):
                                            value["waveforms"]),
                     sampling_rate=get_quantity_attr(value["waveforms"],
                                                     'sample_rate'),
-                    **{'cluster_id': cluster}
+                    **metadata
                     )
                 spike_trains.append(spike_train)
             # TODO: read attrs?
