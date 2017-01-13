@@ -48,7 +48,7 @@ class ExdirIO(BaseIO):
     """
 
     is_readable = True
-    is_writable = False
+    is_writable = True
 
     supported_objects = [Block, Segment, AnalogSignal, ChannelIndex, SpikeTrain]
     readable_objects = [Block, SpikeTrain]
@@ -58,7 +58,7 @@ class ExdirIO(BaseIO):
     is_streameable = False
 
     name = 'exdir'
-    description = 'This IO reads experimental data from an eds folder'
+    description = 'This IO reads experimental data from an exdir folder'
     extensions = ['exdir']
     # mode can be 'file' or 'dir' or 'fake' or 'database'
     # the main case is 'file' but some reader are base on a directory or a database
