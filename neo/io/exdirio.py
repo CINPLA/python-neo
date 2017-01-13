@@ -106,12 +106,14 @@ class ExdirIO(BaseIO):
         return np.reshape(out, len(out))
 
     def _save_event_waveform(self, spike_times, waveforms, channel_indexes,
-                             sampling_rate, channel_group, t_start, t_stop):
+                             sampling_rate, channel_group, t_start, t_stop,
+                             channel_ids):
         event_wf_group = channel_group.create_group('EventWaveform')
         wf_group = event_wf_group.create_group('waveform_timeseries')
         wf_group.attrs['start_time'] = t_start
         wf_group.attrs['stop_time'] = t_stop
         wf_group.attrs['electrode_idx'] = channel_indexes
+        wf_group.attrs['electrode_identities'] = channel_ids
         ts_data = wf_group.create_dataset("timestamps", spike_times)
         wf = wf_group.create_dataset("waveforms", waveforms)
         wf.attrs['sample_rate'] = sampling_rate
@@ -156,15 +158,16 @@ class ExdirIO(BaseIO):
             t_start = seg.t_start
             t_stop = seg.t_stop
             seg_name = seg.name or 'Segment_{}'.format(seg_idx)
-            seg_group = self._processing.create_group(seg_name)
+            seg_group = self._processing.require_group(seg_name)
             for key, val in seg.annotations.items():
                 seg_group.attrs[key] = val
             seg_group.attrs['duration'] = t_stop - t_start
             for group_id, chx in channel_indexes.items():
                 grp = chx.annotations['group_id'] or group_id
                 grp_name = 'channel_group_{}'.format(grp)
-                ch_group = seg_group.create_group(grp_name)
+                ch_group = seg_group.require_group(grp_name)
                 ch_group.attrs['electrode_idx'] = chx.index
+                ch_group.attrs['electrode_identities'] = chx.channel_ids
                 for key, val in chx.annotations.items():
                     ch_group.attrs[key] = val
                 sptrs = [st for st in seg.spiketrains
@@ -177,7 +180,7 @@ class ExdirIO(BaseIO):
                 assert waveforms.shape[:2] == (ns, num_chans)
                 self._save_event_waveform(spike_times, waveforms, chx.index,
                                           sampling_rate, ch_group, t_start,
-                                          t_stop)
+                                          t_stop, chx.channel_ids)
 
                 spike_clusters = self._sptrs_to_spike_clusters(sptrs)
                 assert spike_clusters.shape == (ns,)
@@ -251,7 +254,9 @@ class ExdirIO(BaseIO):
         assert 'channel_group_' in name # TODO assert that there actually is a number after _
         group_id = int(name[-1])
         index = group.attrs['electrode_idx']
+        channel_ids = group.attrs['electrode_identities']
         chx = ChannelIndex(index=index,
+                           channel_ids=channel_ids,
                            name='group_id #{}'.format(group_id),
                            **{'group_id': group_id})
         return chx

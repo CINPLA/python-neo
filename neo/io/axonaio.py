@@ -174,7 +174,8 @@ class AxonaIO(BaseIO):
                 channel_names = np.array(channel_names, dtype="S")
                 channel_index = ChannelIndex(name=chan_name,
                                              channel_names=channel_names,
-                                             index=np.array(channel_ids),
+                                             index=np.arange(num_chans),
+                                             channel_ids=np.array(channel_ids),
                                              **{'group_id': group_id})
                 self._channel_indexes.append(channel_index)
                 self._channel_group_to_channel_index[group_id] = channel_index
