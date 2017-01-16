@@ -82,6 +82,7 @@ class ExdirIO(BaseIO):
 
         # TODO check if group exists
         self._processing = self._exdir_folder.require_group("processing")
+        self._epochs = self._exdir_folder.require_group("epochs")
 
     def _sptrs_to_times(self, sptrs):
         out = np.array([t for sptr in sptrs
@@ -108,14 +109,14 @@ class ExdirIO(BaseIO):
     def _save_event_waveform(self, spike_times, waveforms, channel_indexes,
                              sampling_rate, channel_group, t_start, t_stop,
                              channel_ids):
-        event_wf_group = channel_group.create_group('EventWaveform')
-        wf_group = event_wf_group.create_group('waveform_timeseries')
+        event_wf_group = channel_group.require_group('EventWaveform')
+        wf_group = event_wf_group.require_group('waveform_timeseries')
         wf_group.attrs['start_time'] = t_start
         wf_group.attrs['stop_time'] = t_stop
         wf_group.attrs['electrode_idx'] = channel_indexes
         wf_group.attrs['electrode_identities'] = channel_ids
-        ts_data = wf_group.create_dataset("timestamps", spike_times)
-        wf = wf_group.create_dataset("waveforms", waveforms)
+        ts_data = wf_group.require_dataset("timestamps", spike_times)
+        wf = wf_group.require_dataset("waveforms", waveforms)
         wf.attrs['sample_rate'] = sampling_rate
 
     def _save_clusters(self, spike_clusters, channel_group, t_start,
@@ -144,16 +145,15 @@ class ExdirIO(BaseIO):
 
     def _save_LFP(self, anas, channel_group, channel_indexes):
         lfp_group = channel_group.require_group('LFP')
-        lfp_subgroup = channel_group.require_group('LFP timeseries')
+        lfp_subgroup = lfp_group.require_group('LFP timeseries')
         lfp_subgroup.attrs['electrode_idx'] = channel_indexes
         for idx, ana in enumerate(anas):
             lfp_data = lfp_subgroup.require_dataset('data', ana)
             lfp_data.attrs['annotations'] = ana.annotations
 
     def _save_epochs(self, epochs, t_start, t_stop, group):
-        epos_group = group.require_group('epochs')
-        for epo_num epo in enumerate(epochs):
-            epo_group.require_group('Epoch_{}'.format(epo_num))
+        for epo_num, epo in enumerate(epochs):
+            epo_group = group.require_group('Epoch_{}'.format(epo_num))
             epo_group.attrs['start_time'] = t_start
             epo_group.attrs['stop_time'] = t_stop
             data_group = epo_group.require_group('data')
@@ -184,7 +184,7 @@ class ExdirIO(BaseIO):
             seg_group.attrs['duration'] = t_stop - t_start
 
             self._save_epochs([epo for epo in seg.epochs], t_start, t_stop,
-                              group)
+                              self._epochs)
 
             for group_id, chx in channel_indexes.items():
                 grp = chx.annotations['group_id'] or group_id
@@ -231,6 +231,8 @@ class ExdirIO(BaseIO):
         # TODO read_block with annotations
         blk = Block(file_origin=self._absolute_folder_path)
         if cascade:
+            # for prc_name, prc_group in self._epochs.items():
+                # self.read_epochs(group=prc_sub_group)
             for prc_name, prc_group in self._processing.items():
                 if('Segment' in prc_name):
                     duration = get_quantity_attr(prc_group, 'duration')
@@ -375,17 +377,19 @@ class ExdirIO(BaseIO):
             spike_trains.append(spike_train)
         return spike_trains
 
-    def read_epoch(self, group):
-        epos_group = group.require_group('epochs')
-        for epo_num epo in enumerate(epochs):
-            epo_group.require_group('Epoch_{}'.format(epo_num))
-            epo_group.attrs['start_time'] = t_start
-            epo_group.attrs['stop_time'] = t_stop
-            data_group = epo_group.require_group('data')
-            data_group.require_dataset('timestamps', epo.times)
-            data_group.require_dataset('durations', epo.durations)
-            data_group.require_dataset('data', epo.labels)
-            data_group.attrs['annotations'] = epo.annotations
+    # def read_epochs(self, group):
+    #     epos_group = group.require_group('epochs')
+    #     epos = []
+    #     for epo_num, epo in enumerate(epochs):
+    #         epo_group.require_group('Epoch_{}'.format(epo_num))
+    #         epo_group.attrs['start_time'] = t_start
+    #         epo_group.attrs['stop_time'] = t_stop
+    #         data_group = epo_group.require_group('data')
+    #         epo
+    #         data_group['timestamps'], epo.times)
+    #         data_group['durations'], epo.durations)
+    #         data_group['data'], epo.labels)
+    #         data_group['annotations'] = epo.annotations
 
     def read_tracking(self, group):
         """
