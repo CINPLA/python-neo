@@ -106,14 +106,16 @@ class ExdirIO(BaseIO):
         return np.reshape(out, len(out))
 
     def _save_event_waveform(self, spike_times, waveforms, channel_indexes,
-                             sampling_rate, channel_group, t_start, t_stop):
-        event_wf_group = channel_group.require_group('EventWaveform')
-        wf_group = event_wf_group.require_group('waveform_timeseries')
+                             sampling_rate, channel_group, t_start, t_stop,
+                             channel_ids):
+        event_wf_group = channel_group.create_group('EventWaveform')
+        wf_group = event_wf_group.create_group('waveform_timeseries')
         wf_group.attrs['start_time'] = t_start
         wf_group.attrs['stop_time'] = t_stop
         wf_group.attrs['electrode_idx'] = channel_indexes
-        ts_data = wf_group.require_dataset("timestamps", spike_times)
-        wf = wf_group.require_dataset("waveforms", waveforms)
+        wf_group.attrs['electrode_identities'] = channel_ids
+        ts_data = wf_group.create_dataset("timestamps", spike_times)
+        wf = wf_group.create_dataset("waveforms", waveforms)
         wf.attrs['sample_rate'] = sampling_rate
 
     def _save_clusters(self, spike_clusters, channel_group, t_start,
@@ -201,7 +203,7 @@ class ExdirIO(BaseIO):
                 assert waveforms.shape[:2] == (ns, num_chans)
                 self._save_event_waveform(spike_times, waveforms, chx.index,
                                           sampling_rate, ch_group, t_start,
-                                          t_stop)
+                                          t_stop, chx.channel_ids)
 
                 spike_clusters = self._sptrs_to_spike_clusters(sptrs)
                 assert spike_clusters.shape == (ns,)
@@ -275,7 +277,9 @@ class ExdirIO(BaseIO):
         assert 'channel_group_' in name # TODO assert that there actually is a number after _
         group_id = int(name[-1])
         index = group.attrs['electrode_idx']
+        channel_ids = group.attrs['electrode_identities']
         chx = ChannelIndex(index=index,
+                           channel_ids=channel_ids,
                            name='group_id #{}'.format(group_id),
                            **{'group_id': group_id})
         return chx
