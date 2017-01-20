@@ -265,35 +265,28 @@ class ExdirIO(BaseIO):
                 self.read_tracking(group=prc_group)
                 self.read_analogsignals(group=prc_group)
 
-                sptrs = self.read_event_waveforms(group=prc_group)
-                if sptrs is None:
-                    sptrs = self.read_unit_times(group=prc_group)
+                spike_trains = self.read_event_waveforms(group=prc_group)
+                if spike_trains is None:
+                    spike_trains = self.read_unit_times(group=prc_group)
 
-                # TODO enable units with several spiketrains
-                # if you have several segments, cluster nums are assumed to be unique,
-                # thus if two clusters have same num they are assumed to be of same
-                # neo.Unit and their spiketrains are appended.
 
-                # if sptrs is not None:
-                #     # make units from spiketrains in first segment
-                #     units = {sptr.annotations['cluster_id']:
-                #              Unit(name='Cluster #{}'.format(
-                #                 sptr.annotations['cluster_id']
-                #                 ),
-                #                   **{'cluster_id':
-                #                      sptr.annotations['cluster_id']}
-                #                   )
-                #              for seg in self._segments.values()
-                #              if seg.index == 0
-                #              }
-                #     clusters = {sptr.annotations['cluster_id']:}
-                #     for sptr in sptrs:
-                #         cluster_id = sptr.annotations['cluster_id']
-                #         chx = sptr.channel_index
-                #         unit = units[cluster_id]
-                #         unit.spiketrains.append(sptr)
-                #         if not hasattr(unit, 'channel_index')
-                #             unit.channel_index = chx
+            for chx_id, chx in self._channel_indexes.items():
+                clusters = [(sptr.annotations['cluster_id'], sptr)
+                            for seg in self._segments.values()
+                            for sptr in seg.spiketrains
+                            if sptr.channel_index==chx]
+                cluster_ids = np.unique([int(cid) for cid, _ in clusters])
+                for cluster_id in cluster_ids:
+                    unit = Unit(name='Cluster #{}'.format(cluster_id),
+                                **{'cluster_id': cluster_id})
+                    sptrs = [sptr for cid, sptr in clusters if cid==cluster_id]
+                    if len(sptrs) > 1:
+                        assert all(sptr1.channel_index == sptr2.channel_index
+                                   for sptr1 in sptrs for sptr2 in sptrs)
+                    chx = sptrs[0].channel_index
+                    unit.spiketrains.extend(sptrs)
+                    unit.channel_index = chx
+                    chx.units.append(unit)
 
 
             # TODO May need to "populate_RecordingChannel"
@@ -341,13 +334,14 @@ class ExdirIO(BaseIO):
         if not hasattr(self, '_segments'):
             self._read_segments_channel_indexes()
         spike_trains = []
-        clustering_name = '/'.join(group.name.split('/')[:-1]) + '/Clustering'
-        if clustering_name in self._exdir_folder:
-            clustering = self._exdir_folder[clustering_name]
-            spike_clusters = clustering["nums"].data
+        container_name = '/'.join(group.name.split('/')[:-1])
+        container_group = self._exdir_folder[container_name]
+        if 'Clustering' in container_group:
+            clustering = container_group['Clustering']
+            spike_clusters = np.array(clustering["nums"].data, dtype=int)
             cluster_groups = clustering.attrs['cluster_groups']
         else:
-            spike_clusters = np.zeros(group.attrs['num_samples'])
+            spike_clusters = np.zeros(group.attrs['num_samples'], dtype=int)
             cluster_groups = {0:'unsorted'}
         for cluster in np.unique(spike_clusters):
             indices, = np.where(spike_clusters == cluster)
@@ -381,7 +375,7 @@ class ExdirIO(BaseIO):
                 times=get_quantity(un_ti_grp.data[indices], timestamps),
                 t_stop=get_quantity_attr(un_ti_grp, 'stop_time'),
                 t_start=get_quantity_attr(un_ti_grp, 'start_time'),
-                **{'cluster_id': cluster,
+                **{'cluster_id': un_ti_grp.attrs['cluster_id'],
                    'cluster_group': un_ti_grp.attrs['cluster_group'], # TODO add clustering version, type, algorithm etc.
                    }
                 )
