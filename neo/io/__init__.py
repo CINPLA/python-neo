@@ -181,10 +181,10 @@ def get_io(filename, mode=None):
     for io in iolist:
         if extension in io.extensions:
             if mode is None:
-                return io(filename=filename)
+                return io(filename)
             else:
                 try:
-                    return io(filename=filename, mode=mode)
+                    return io(filename, mode=mode)
                 except:
                     raise IOError("file extension %s is not compatible with mode %s" % (extension, mode))
 
