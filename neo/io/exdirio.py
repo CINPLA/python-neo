@@ -184,7 +184,7 @@ class ExdirIO(BaseIO):
             for group_id, chx in channel_indexes.items():
                 grp = chx.annotations['group_id'] or group_id
                 grp_name = 'channel_group_{}'.format(grp)
-                ch_group = seg_group.require_group(grp_name+'_'+seg_name)
+                ch_group = self._processing.require_group(grp_name+'_'+seg_name)
                 ch_group.attrs['electrode_idx'] = chx.index
                 ch_group.attrs['electrode_identities'] = chx.channel_ids
                 ch_group.attrs['electrode_group_id'] = group_id
@@ -217,8 +217,9 @@ class ExdirIO(BaseIO):
 
                 self._save_unit_times(sptrs, ch_group, seg.t_start, seg.t_stop)
 
-                self._save_LFP([ana for ana in chx.analogsignals], ch_group,
-                               chx.index)
+                anas = [ana for ana in chx.analogsignals]
+                if len(anas) > 0:
+                    self._save_LFP(anas, ch_group, chx.index)
 
     def _read_segments_channel_indexes(self):
         self._segments = {}
