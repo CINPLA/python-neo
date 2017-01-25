@@ -39,10 +39,6 @@ def get_quantity_attr(exdir_object, key):
                        exdir_object.attrs[key]['unit'])
 
 
-def get_quantity(data, exdir_object):
-    return pq.Quantity(data, exdir_object.attrs["unit"])
-
-
 class ExdirIO(BaseIO):
     """
     Class for reading/writting of exdir fromat
@@ -154,7 +150,10 @@ class ExdirIO(BaseIO):
 
     def _save_epochs(self, epochs, t_start, t_stop, group):
         for epo_num, epo in enumerate(epochs):
-            epo_group = group.require_group('Epoch_{}'.format(epo_num))
+            if epo.name is None:
+                epo_group = group.require_group('Epoch_{}'.format(epo_num))
+            else:
+                epo_group = group.require_group(epo.name)
             epo_group.attrs['start_time'] = t_start
             epo_group.attrs['stop_time'] = t_stop
             data_group = epo_group.require_group('data')
@@ -254,8 +253,8 @@ class ExdirIO(BaseIO):
         # TODO read_block with annotations
         blk = Block(file_origin=self._absolute_folder_path)
         if cascade:
-            # for prc_name, prc_group in self._epochs.items():
-                # self.read_epochs(group=prc_sub_group)
+            for prc_name, prc_group in self._epochs.items():
+                epo = self.read_epochs(group=prc_group)
             if not hasattr(self, '_segments'):
                 self._read_segments_channel_indexes()
             blk.segments.extend(list(self._segments.values()))
@@ -293,6 +292,31 @@ class ExdirIO(BaseIO):
 
         return blk
 
+    def read_epochs(self, group):
+        if not hasattr(self, '_segments'):
+            self._read_segments_channel_indexes()
+        times = pq.Quantity(group['timestamps'].data,
+                            group['timestamps'].attrs['unit'])
+        durations = pq.Quantity(group['durations'].data,
+                                group['durations'].attrs['unit'])
+        if 'data' in group:
+            if 'unit' in group['data'].attrs:
+                labels = group['data'].data
+            else:
+                labels = pq.Quantity(group['data'].data,
+                                     group['data'].attrs['unit'])
+        else:
+            labels = None
+        if 'annotations' in group.attrs:
+            annotations = group.attrs['annotations']
+        else:
+            annotations = {}
+        epo = Epoch(times=times, durations=durations, labels=labels,
+                    name=group.name.split('/')[-1], **annotations)
+        self._segments[group.attrs['segment_id']].epochs.append(epo)
+
+        return epo
+
     def read_analogsignals(self, group):
         group = self._find_my_group(group, 'LFP')
         if group is None:
@@ -318,12 +342,13 @@ class ExdirIO(BaseIO):
         return analogsignals
 
     def read_spiketrains(self, group):
-        if "EventWaveform" == op.split(group.name)[-1]:
+        group_name = group.name.split('/')[-1]
+        if "EventWaveform" == group_name:
             return self.read_event_waveforms(group)
-        elif 'UnitTimes' == op.split(group.name)[-1]:
+        elif 'UnitTimes' == group_name:
             return self.read_unit_times(group)
         else:
-            raise ValueError('group name {} '.format(group.name) +
+            raise ValueError('group name {} '.format(group_name) +
                              'is not recognized, the deepest folder should' +
                              ' be either "EventWaveform" or "UnitTimes"')
 
@@ -348,12 +373,12 @@ class ExdirIO(BaseIO):
             metadata = {'cluster_id': cluster,
                         'cluster_group': cluster_groups[cluster]} # TODO add clustering version, type, algorithm etc.
             sptr = SpikeTrain(
-                times=get_quantity(group["timestamps"].data[indices],
-                                   group["timestamps"]),
+                times=pq.Quantity(group["timestamps"].data[indices],
+                                   group["timestamps"].attrs['unit']),
                 t_stop=get_quantity_attr(group, 'stop_time'),
                 t_start=get_quantity_attr(group, 'start_time'),
-                waveforms=get_quantity(group["data"].data[indices, :, :],
-                                       group["data"]),
+                waveforms=pq.Quantity(group["data"].data[indices, :, :],
+                                       group["data"].attrs['unit']),
                 sampling_rate=get_quantity_attr(group["data"], 'sample_rate'),
                 **metadata
                 )
@@ -372,7 +397,7 @@ class ExdirIO(BaseIO):
         spike_trains = []
         for un_ti_grp in group.values():
             sptr = SpikeTrain(
-                times=get_quantity(un_ti_grp.data[indices], timestamps),
+                times=pq.Quantity(un_ti_grp.data[indices], un_ti_grp.attrs['unit']),
                 t_stop=get_quantity_attr(un_ti_grp, 'stop_time'),
                 t_start=get_quantity_attr(un_ti_grp, 'start_time'),
                 **{'cluster_id': un_ti_grp.attrs['cluster_id'],
@@ -386,19 +411,6 @@ class ExdirIO(BaseIO):
             sptr.channel_index = chx
         return spike_trains
 
-    # def read_epochs(self, group):
-    #     epos_group = group.require_group('epochs')
-    #     epos = []
-    #     for epo_num, epo in enumerate(epochs):
-    #         epo_group.require_group('Epoch_{}'.format(epo_num))
-    #         epo_group.attrs['start_time'] = t_start
-    #         epo_group.attrs['stop_time'] = t_stop
-    #         data_group = epo_group.require_group('data')
-    #         epo
-    #         data_group['timestamps'], epo.times)
-    #         data_group['durations'], epo.durations)
-    #         data_group['data'], epo.labels)
-    #         data_group['annotations'] = epo.annotations
 
     def read_tracking(self, group):
         """
