@@ -96,75 +96,76 @@ class ExdirIO(BaseIO):
     def _sptrs_to_spike_clusters(self, sptrs):
         if 'cluster_id' in sptrs[0].annotations:  # assumes its true for all
             out = np.array([i for sptr in sptrs for i in
-                           [sptr.annotations['cluster_id']]*len(sptr)])
+                           [sptr.annotations['cluster_id']] * len(sptr)])
         else:
             out = np.array([i for j, sptr in enumerate(sptrs)
-                            for i in [j]*len(sptr)])
+                            for i in [j] * len(sptr)])
         # HACK sometimes out is shape (n_spikes, 1)
         return np.reshape(out, len(out))
 
-    def _save_event_waveform(self, spike_times, waveforms, channel_indexes,
-                             sampling_rate, channel_group, t_start, t_stop,
-                             channel_ids):
-        event_wf_group = channel_group.require_group('EventWaveform')
-        wf_group = event_wf_group.require_group('waveform_timeseries')
-        wf_group.attrs['start_time'] = t_start
-        wf_group.attrs['stop_time'] = t_stop
-        wf_group.attrs['electrode_idx'] = channel_indexes
-        wf_group.attrs['electrode_identities'] = channel_ids
+    def save_event_waveform(self, spike_times, waveforms, sampling_rate,
+                             exdir_group, **annotations):   
+        wf_group = exdir_group.require_group('EventWaveform')
+        attr = {'num_samples': len(spike_times),
+                'sample_length': waveforms.shape[1]}
+        annotations.update()
+        wf_group.attrs = annotations
         ts_data = wf_group.require_dataset("timestamps", spike_times)
-        wf = wf_group.require_dataset("waveforms", waveforms)
-        wf.attrs['sample_rate'] = sampling_rate
+        wf = wf_group.require_dataset("data", waveforms)
+        wf.attrs = {'sample_rate': sampling_rate}
 
-    def _save_clusters(self, spike_clusters, channel_group, t_start,
-                       t_stop, cluster_groups):
-        cl_group = channel_group.require_group('Clustering')
-        cl_group.attrs['start_time'] = t_start
-        cl_group.attrs['stop_time'] = t_stop
+    def save_clusters(self, spike_clusters, exdir_group, **annotations):
+        cl_group = exdir_group.require_group('Clustering')
+        if annotations:
+            cl_group.attrs = annotations
         cluster_nums = np.unique(spike_clusters)
-        cl_group.attrs['cluster_groups'] = cluster_groups
         cl_data = cl_group.require_dataset('cluster_nums', cluster_nums)
         cl_data = cl_group.require_dataset('nums', spike_clusters)
 
-    def _save_unit_times(self, sptrs, channel_group, t_start, t_stop):
-        unit_times_group = channel_group.require_group('UnitTimes')
-        unit_times_group.attrs['start_time'] = t_start
-        unit_times_group.attrs['stop_time'] = t_stop
+    def save_unit_times(self, sptrs, exdir_group, **annotations):
+        unit_times_group = exdir_group.require_group('UnitTimes')
+        if annotations:
+            unit_times_group.attrs = annotations
         for idx, sptr in enumerate(sptrs):
             if 'cluster_id' in sptr.annotations:
                 sptr_id = sptr.annotations['cluster_id']
             else:
                 sptr_id = idx
             times_group = unit_times_group.require_group('{}'.format(sptr_id))
-            for key, val in sptr.annotations.items():
-                times_group.attrs[key] = val
+            times_group.attrs = sptr.annotations
             ts_data = times_group.require_dataset('times', sptr.times)
 
-    def _save_LFP(self, anas, channel_group, channel_indexes):
-        lfp_group = channel_group.require_group('LFP')
-        lfp_subgroup = lfp_group.require_group('LFP timeseries')
-        lfp_subgroup.attrs['electrode_idx'] = channel_indexes
+    def save_LFP(self, anas, exdir_group, **annotations):
+        lfp_group = exdir_group.require_group('LFP')
+        if annotations:
+            lfp_group.attrs = annotations
         for idx, ana in enumerate(anas):
-            lfp_data = lfp_subgroup.require_dataset('data', ana)
-            lfp_data.attrs['annotations'] = ana.annotations
+            lfp_data = lfp_group.require_dataset('data', ana) # TODO sampling_rate etc
+            lfp_data.attrs = ana.annotations
 
-    def _save_epochs(self, epochs, t_start, t_stop, group):
+    def save_epochs(self, epochs, group, **annotations):
         for epo_num, epo in enumerate(epochs):
             if epo.name is None:
                 epo_group = group.require_group('Epoch_{}'.format(epo_num))
             else:
                 epo_group = group.require_group(epo.name)
-            epo_group.attrs['start_time'] = t_start
-            epo_group.attrs['stop_time'] = t_stop
+            if annotations:
+                epo_group.attrs = annotations
             data_group = epo_group.require_group('data')
             data_group.require_dataset('timestamps', epo.times)
             data_group.require_dataset('durations', epo.durations)
             data_group.require_dataset('data', epo.labels)
-            data_group.attrs['annotations'] = epo.annotations
+            data_group.attrs = epo.annotations
 
     def save(self, blk):
         # TODO save block annotations
         # TODO add clustering version, type, algorithm etc.
+        # TODO save stuff even if no channel_indexes?
+        # TODO save segment as epoch? with segment annotations
+        if any(ana for seg in blk.segments for ana in seg.analogsignals):
+            print('Warning: saving analogsignals is not supported by this' +
+                  'funtion, use save_LFP in stead')
+            
         if not all(['group_id' in chx.annotations
                     for chx in blk.channel_indexes]):
             print('Warning "group_id" is not in channel_index.annotations ' +
@@ -174,24 +175,25 @@ class ExdirIO(BaseIO):
         else:
             channel_indexes = {int(chx.annotations['group_id']): chx
                                for chx in blk.channel_indexes}
-        for seg in blk.segments:
-
-            seg_name = 'segment_{}'.format(seg.index)
-            self._save_epochs([epo for epo in seg.epochs], seg.t_start, seg.t_stop,
-                              self._epochs)
+        for seg_idx, seg in enumerate(blk.segments):
+            seg_id = seg.index or seg_idx # TODO assumes that all or none segments have index
+            seg_name = 'segment_{}'.format(seg_id)
+            if len(seg.epochs) > 0:
+                self.save_epochs([epo for epo in seg.epochs], self._epochs,
+                                  t_start=seg.t_start, t_stop=seg.t_stop,
+                                  segment_id=seg_id)
 
             for group_id, chx in channel_indexes.items():
-                grp = chx.annotations['group_id'] or group_id
-                grp_name = 'channel_group_{}'.format(grp)
-                ch_group = self._processing.require_group(grp_name+'_'+seg_name)
-                ch_group.attrs['electrode_idx'] = chx.index
-                ch_group.attrs['electrode_identities'] = chx.channel_ids
-                ch_group.attrs['electrode_group_id'] = group_id
-                ch_group.attrs['segment_id'] = seg.index
-                for key, val in seg.annotations.items():
-                    seg_group.attrs[key] = val
-                for key, val in chx.annotations.items():
-                    ch_group.attrs[key] = val
+                grp_name = 'channel_group_{}'.format(group_id)
+                exdir_group = self._processing.require_group(grp_name + '_' +
+                                                          seg_name)
+                annotations = {'electrode_idx': chx.index,
+                               'electrode_group_id': group_id,
+                               'segment_id': seg_id,
+                               'start_time': seg.t_start,
+                               'stop_time': seg.t_stop,
+                               'electrode_identities': chx.channel_ids}
+                exdir_group.attrs = annotations
                 sptrs = [st for st in seg.spiketrains
                          if st.channel_index == chx]
                 sampling_rate = sptrs[0].sampling_rate.rescale('Hz')
@@ -200,10 +202,10 @@ class ExdirIO(BaseIO):
                 num_chans = len(chx.index)
                 waveforms = self._sptrs_to_wfseriesf(sptrs)
                 assert waveforms.shape[:2] == (ns, num_chans)
-                self._save_event_waveform(spike_times, waveforms, chx.index,
-                                          sampling_rate, ch_group, seg.t_start,
-                                          seg.t_stop, chx.channel_ids)
-
+                self.save_event_waveform(spike_times, waveforms, sampling_rate,
+                                          exdir_group, **annotations)
+                self.save_unit_times(sptrs, exdir_group, **annotations)
+                
                 spike_clusters = self._sptrs_to_spike_clusters(sptrs)
                 assert spike_clusters.shape == (ns,)
                 if 'group' in chx.annotations:
@@ -211,14 +213,8 @@ class ExdirIO(BaseIO):
                 else:
                     cluster_groups = {int(cl): 'Unsorted'
                                       for cl in np.unique(spike_clusters)}
-                self._save_clusters(spike_clusters, ch_group, seg.t_start, seg.t_stop,
-                                    cluster_groups)
-
-                self._save_unit_times(sptrs, ch_group, seg.t_start, seg.t_stop)
-
-                anas = [ana for ana in chx.analogsignals]
-                if len(anas) > 0:
-                    self._save_LFP(anas, ch_group, chx.index)
+                annotations.update({'cluster_groups': cluster_groups})
+                self.save_clusters(spike_clusters, exdir_group, **annotations)
 
     def _read_segments_channel_indexes(self):
         self._segments = {}
@@ -229,20 +225,19 @@ class ExdirIO(BaseIO):
                 if not idx in self._segments:
                     seg = Segment(name='Segment {}'.format(idx),
                                   index=idx)
-                    t_start = get_quantity_attr(prc_group, 'start_time')
-                    t_stop = get_quantity_attr(prc_group, 'stop_time')
+                    t_start = prc_group.attrs['start_time']
+                    t_stop = prc_group.attrs['stop_time']
                     seg.duration = t_stop - t_start
                     self._segments[idx] = seg
             if 'electrode_group_id' in prc_group.attrs:
                 idx = prc_group.attrs['electrode_group_id']
-                if not idx in self._channel_indexes:
+                if idx not in self._channel_indexes:
                     chx = ChannelIndex(name='Channel group {}'.format(idx),
                                        index=prc_group.attrs['electrode_idx'],
                                        channel_ids=prc_group.attrs['electrode_identities'],
                                        **{'group_id': prc_group.attrs['electrode_group_id']})
                     self._channel_indexes[idx] = chx
         return self._segments, self._channel_indexes
-
 
     def read_block(self,
                    lazy=False,
@@ -307,10 +302,7 @@ class ExdirIO(BaseIO):
                                      group['data'].attrs['unit'])
         else:
             labels = None
-        if 'annotations' in group.attrs:
-            annotations = group.attrs['annotations']
-        else:
-            annotations = {}
+        annotations = group.attrs._open_or_create() #HACK TODO make a function in 
         epo = Epoch(times=times, durations=durations, labels=labels,
                     name=group.name.split('/')[-1], **annotations)
         self._segments[group.attrs['segment_id']].epochs.append(epo)
@@ -329,7 +321,7 @@ class ExdirIO(BaseIO):
             ana = AnalogSignal(
                 signal.data,
                 units=signal.attrs["unit"],
-                sampling_rate=get_quantity_attr(lfp_grp, 'sample_rate')
+                sampling_rate=lfp_grp.attrs['sample_rate']
                 )
             self._segments[lfp_grp.attrs['segment_id']].analogsignals.append(ana)
             chx = self._channel_indexes[lfp_grp.attrs['electrode_group_id']]
@@ -372,14 +364,18 @@ class ExdirIO(BaseIO):
             indices, = np.where(spike_clusters == cluster)
             metadata = {'cluster_id': cluster,
                         'cluster_group': cluster_groups[cluster]} # TODO add clustering version, type, algorithm etc.
+            if 'unit' in group["data"].attrs:
+                waveforms = pq.Quantity(group["data"].data[indices, :, :],
+                                        group["data"].attrs['unit'])
+            else:
+                waveforms = group["data"].data[indices, :, :]
             sptr = SpikeTrain(
                 times=pq.Quantity(group["timestamps"].data[indices],
                                    group["timestamps"].attrs['unit']),
-                t_stop=get_quantity_attr(group, 'stop_time'),
-                t_start=get_quantity_attr(group, 'start_time'),
-                waveforms=pq.Quantity(group["data"].data[indices, :, :],
-                                       group["data"].attrs['unit']),
-                sampling_rate=get_quantity_attr(group["data"], 'sample_rate'),
+                t_stop=group.attrs['stop_time'],
+                t_start=group.attrs['start_time'],
+                waveforms=waveforms,
+                sampling_rate=group["data"].attrs['sample_rate'],
                 **metadata
                 )
             spike_trains.append(sptr)
@@ -398,11 +394,9 @@ class ExdirIO(BaseIO):
         for un_ti_grp in group.values():
             sptr = SpikeTrain(
                 times=pq.Quantity(un_ti_grp.data[indices], un_ti_grp.attrs['unit']),
-                t_stop=get_quantity_attr(un_ti_grp, 'stop_time'),
-                t_start=get_quantity_attr(un_ti_grp, 'start_time'),
-                **{'cluster_id': un_ti_grp.attrs['cluster_id'],
-                   'cluster_group': un_ti_grp.attrs['cluster_group'], # TODO add clustering version, type, algorithm etc.
-                   }
+                t_stop=un_ti_grp.attrs['stop_time'],
+                t_start=un_ti_grp.attrs['start_time'],
+                **un_ti_grp.attrs
                 )
             spike_trains.append(sptr)
             self._segments[un_ti_grp.attrs['segment_id']].spiketrains.append(sptr)
