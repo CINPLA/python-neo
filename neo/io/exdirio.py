@@ -104,7 +104,7 @@ class ExdirIO(BaseIO):
         return np.reshape(out, len(out))
 
     def save_event_waveform(self, spike_times, waveforms, sampling_rate,
-                             exdir_group, **annotations):   
+                            exdir_group, **annotations):   
         wf_group = exdir_group.require_group('EventWaveform')
         attr = {'num_samples': len(spike_times),
                 'sample_length': waveforms.shape[1]}
@@ -140,7 +140,7 @@ class ExdirIO(BaseIO):
         if annotations:
             lfp_group.attrs = annotations
         for idx, ana in enumerate(anas):
-            lfp_data = lfp_group.require_dataset('data', ana) # TODO sampling_rate etc
+            lfp_data = lfp_group.require_dataset('data', ana)  # TODO sampling_rate etc
             lfp_data.attrs = ana.annotations
 
     def save_epochs(self, epochs, group, **annotations):
@@ -292,8 +292,12 @@ class ExdirIO(BaseIO):
             self._read_segments_channel_indexes()
         times = pq.Quantity(group['timestamps'].data,
                             group['timestamps'].attrs['unit'])
-        durations = pq.Quantity(group['durations'].data,
-                                group['durations'].attrs['unit'])
+        
+        if 'duration' in group:
+            durations = pq.Quantity(group['durations'].data, group['durations'].attrs['unit'])
+        else:
+            durations = pq.Quantity(np.nan, )
+    
         if 'data' in group:
             if 'unit' in group['data'].attrs:
                 labels = group['data'].data
@@ -302,7 +306,7 @@ class ExdirIO(BaseIO):
                                      group['data'].attrs['unit'])
         else:
             labels = None
-        annotations = group.attrs._open_or_create() #HACK TODO make a function in 
+        annotations = group.attrs._open_or_create()  # HACK TODO make a function in 
         epo = Epoch(times=times, durations=durations, labels=labels,
                     name=group.name.split('/')[-1], **annotations)
         self._segments[group.attrs['segment_id']].epochs.append(epo)
@@ -356,7 +360,7 @@ class ExdirIO(BaseIO):
         if 'Clustering' in container_group:
             clustering = container_group['Clustering']
             spike_clusters = np.array(clustering["nums"].data, dtype=int)
-            cluster_groups = clustering.attrs['cluster_groups']
+            cluster_groups = dict(clustering.attrs['cluster_groups'])
         else:
             spike_clusters = np.zeros(group.attrs['num_samples'], dtype=int)
             cluster_groups = {0:'unsorted'}
@@ -364,6 +368,7 @@ class ExdirIO(BaseIO):
             indices, = np.where(spike_clusters == cluster)
             metadata = {'cluster_id': cluster,
                         'cluster_group': cluster_groups[cluster]} # TODO add clustering version, type, algorithm etc.
+            
             if 'unit' in group["data"].attrs:
                 waveforms = pq.Quantity(group["data"].data[indices, :, :],
                                         group["data"].attrs['unit'])
