@@ -246,37 +246,39 @@ class ExdirIO(BaseIO):
         seg.duration = self._exdir_folder.attrs['session_duration']
         blk.segments.append(seg)
         if cascade:
-            for group in self._epochs:
-                epo = self.read_epoch(group.folder, cascade, lazy)
+            for group in self._epochs.values():
+                epo = self.read_epoch(group, cascade, lazy)
                 seg.epochs.append(epo)
             if not hasattr(self, '_channel_indexes'):
                 self._channel_indexes = self._get_channel_indexes(self._processing)
             blk.channel_indexes.extend(list(self._channel_indexes.values()))
             
             for prc_group in self._processing.values():
-                for group in prc_group.values():
-                    if group.name.split('/')[-1] == 'LFP':
-                        for lfp_group in group:
-                            path = group.folder
-                            ana = self.read_analogsignal(path, cascade, lazy)
-                            seg.analogsignals.append(ana)
-                            chx = self._channel_indexes[lfp_group.attrs['electrode_group_id']]
-                            chx.analogsignals.append(ana)
-                            ana.channel_index = chx
-                    spike_trains = None
-                    if group.name.split('/')[-1] == 'EventWaveform' and get_waveforms:
-                        for wf_group in group.values():
-                            spike_trains = self.read_event_waveforms(
-                                group=wf_group,
+                for sub_group in prc_group.values():
+                    for group in sub_group.values():
+                        if group.name.split('/')[-1] == 'LFP':
+                            for lfp_group in group.values():
+                                ana = self.read_analogsignal(lfp_group, 
+                                                            cascade=cascade, 
+                                                            lazy=lazy)
+                                seg.analogsignals.append(ana)
+                                chx = self._channel_indexes[lfp_group.attrs['electrode_group_id']]
+                                chx.analogsignals.append(ana)
+                                ana.channel_index = chx
+                        spike_trains = None
+                        if group.name.split('/')[-1] == 'EventWaveform' and get_waveforms:
+                            for wf_group in group.values():
+                                spike_trains = self.read_event_waveforms(
+                                    group=wf_group,
+                                    cluster_group=cluster_group
+                                )
+                        if group.name.split('/')[-1] == 'UnitTimes' and not get_waveforms:
+                            spike_trains = self.read_unit_times(
+                                group=group,
                                 cluster_group=cluster_group
                             )
-                    if group.name.split('/')[-1] == 'UnitTimes' and not get_waveforms:
-                        spike_trains = self.read_unit_times(
-                            group=group,
-                            cluster_group=cluster_group
-                        )
-                    if spike_trains is not None:
-                        seg.spiketrains.extend(spike_trains)
+                        if spike_trains is not None:
+                            seg.spiketrains.extend(spike_trains)
                     
                 for chx_id, chx in self._channel_indexes.items():
                     sptrs = [sptr for sptr in seg.spiketrains
@@ -290,8 +292,7 @@ class ExdirIO(BaseIO):
                         chx.units.append(unit)
         return blk
 
-    def read_epoch(self, path, cascade=True, lazy=False):
-        group = self._exdir_folder[path]
+    def read_epoch(self, group, cascade=True, lazy=False):
         times = pq.Quantity(group['timestamps'].data,
                             group['timestamps'].attrs['unit'])
         durations = pq.Quantity(group['durations'].data,
@@ -310,10 +311,7 @@ class ExdirIO(BaseIO):
 
         return epo
         
-    def read_analogsignal(self, path, cascade=True, lazy=False):
-        if 'LFP' not in path:
-            return None
-        group = self._exdir_folder[path]
+    def read_analogsignal(self, group, cascade=True, lazy=False):
         signal = group["data"]
         ana = AnalogSignal(signal.data,
                            units=signal.attrs["unit"],
