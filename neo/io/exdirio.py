@@ -109,7 +109,7 @@ class ExdirIO(BaseIO):
         wf_group.attrs = attr
         ts_data = wf_group.require_dataset("timestamps", spike_times)
         wf = wf_group.require_dataset("data", waveforms)
-        wf.attrs = {'sample_rate': sampling_rate}
+        wf.attrs['sample_rate'] = sampling_rate
 
     def write_clusters(self, spike_clusters, spike_times, exdir_group, 
                       **annotations):
@@ -183,10 +183,10 @@ class ExdirIO(BaseIO):
         if len(seg.epochs) > 0:
             self.write_epochs([epo for epo in seg.epochs], self._epochs,
                               t_start=seg.t_start, t_stop=seg.t_stop)
-
+        elphys = self._processing.require_group('electrophysiology') # TODO find right place without name
         for group_id, chx in channel_indexes.items():
             grp_name = 'channel_group_{}'.format(group_id)
-            exdir_group = self._processing.require_group(grp_name)
+            exdir_group = elphys.require_group(grp_name)
             annotations = {'electrode_idx': chx.index,
                            'electrode_group_id': group_id,
                            'start_time': seg.t_start,
@@ -216,19 +216,18 @@ class ExdirIO(BaseIO):
             self.write_clusters(spike_clusters, spike_times, exdir_group,
                                 **annotations)
 
-    def _get_channel_indexes(self, group, channel_indexes=dict()):
-        if isinstance(group, exdir.core.Dataset):
-            return
-        for sub_group in group.values():
-            if 'electrode_group_id' in sub_group.attrs:
-                idx = sub_group.attrs['electrode_group_id']
+    def _get_channel_indexes(self, processing):
+        channel_indexes = dict()
+        assert 'electrophysiology' in processing
+        for sub_processing in processing['electrophysiology'].values():
+            if 'electrode_group_id' in sub_processing.attrs:
+                idx = sub_processing.attrs['electrode_group_id']
                 if idx not in channel_indexes:
                     chx = ChannelIndex(name='Channel group {}'.format(idx),
-                                       index=sub_group.attrs['electrode_idx'],
-                                       channel_ids=sub_group.attrs['electrode_identities'],
-                                       **{'group_id': sub_group.attrs['electrode_group_id']})
+                                       index=sub_processing.attrs['electrode_idx'],
+                                       channel_ids=sub_processing.attrs['electrode_identities'],
+                                       **{'group_id': sub_processing.attrs['electrode_group_id']})
                     channel_indexes[idx] = chx
-            self._get_channel_indexes(sub_group, channel_indexes)
         return channel_indexes
 
     def read_block(self,
@@ -333,7 +332,7 @@ class ExdirIO(BaseIO):
 
     def read_event_waveforms(self, group, cluster_group='all'):
         spike_trains = []
-        container_name = '/'.join(group.name.split('/')[:-1])
+        container_name = '/'.join(group.name.split('/')[:-2])
         container_group = self._exdir_folder[container_name]
         if 'Clustering' in container_group:
             clustering = container_group['Clustering']
@@ -343,9 +342,12 @@ class ExdirIO(BaseIO):
             spike_clusters = np.zeros(group.attrs['num_samples'], dtype=int)
             cluster_groups = {0: 'unsorted'}
         for cluster in np.unique(spike_clusters):
+            if cluster_groups[cluster] is None:
+                print('Warning: found cluster group None ', cluster)
             if cluster_group != 'all':
-                if cluster_groups[cluster] != cluster_group:
-                    continue
+                if cluster_groups[cluster] is not None:
+                    if cluster_groups[cluster].lower() != cluster_group.lower():
+                        continue
             indices, = np.where(spike_clusters == cluster)
             metadata = {'cluster_id': cluster,
                         'cluster_group': cluster_groups[cluster]} # TODO add clustering version, type, algorithm etc.
