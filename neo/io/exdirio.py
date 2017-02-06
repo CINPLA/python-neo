@@ -249,6 +249,7 @@ class ExdirIO(BaseIO):
                     channel_ids=channel_group.attrs['electrode_identities'],
                     **{'group_id': group_id}
                 )
+                blk.channel_indexes.append(chx)
                 if 'LFP' in channel_group:
                     for lfp_group in channel_group['LFP'].values():
                         ana = self.read_analogsignal(lfp_group.name,
