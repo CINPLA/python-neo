@@ -148,12 +148,18 @@ class TestExdirIO(unittest.TestCase):
         blk = io.read_block()
         np.testing.assert_equal(len(self.blk.channel_indexes),
                                 len(blk.channel_indexes))
+
+    def test_write_read_block_units_equal(self):
+        io = ExdirIO(self.fname)
+        io.write_block(self.blk)
+        io = ExdirIO(self.fname)
+        blk = io.read_block()
         units = {unit.name: unit
                  for unit in self.blk.channel_indexes[0].units}
         units_load = {unit.name: unit
                       for unit in blk.channel_indexes[0].units}
         for key in units.keys():
-            np.assert_equal(len(units[key].spiketrains[0]),
+            np.testing.assert_equal(len(units[key].spiketrains[0]),
                             len(units_load[key].spiketrains[0]))
             sptr = units[key].spiketrains[0]
             sptr_load = units_load[key].spiketrains[0]
