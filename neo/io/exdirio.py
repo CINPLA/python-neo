@@ -38,6 +38,7 @@ try:
 except ImportError:
     HAVE_EXDIR = False
 
+
 class ExdirIO(BaseIO):
     """
     Class for reading/writting of exdir fromat
@@ -102,9 +103,12 @@ class ExdirIO(BaseIO):
         # HACK sometimes out is shape (n_spikes, 1)
         return np.reshape(out, len(out))
 
-    def write_event_waveform(self, spike_times, waveforms, sampling_rate,
-                             exdir_group, **annotations):
-        group = exdir_group.require_group('EventWaveform')
+    def write_event_waveform(self, sptrs, path, **annotations):
+        channel_group = self._exdir_directory[path]
+        sampling_rate = sptrs[0].sampling_rate.rescale('Hz')
+        spike_times = self._sptrs_to_times(sptrs)
+        waveforms = self._sptrs_to_wfseriesf(sptrs)
+        group = channel_group.require_group('EventWaveform')
         wf_group = group.require_group('waveform_timeseries')
         attr = {'num_samples': len(spike_times),
                 'sample_length': waveforms.shape[1]}
@@ -114,9 +118,11 @@ class ExdirIO(BaseIO):
         wf = wf_group.require_dataset("data", waveforms)
         wf.attrs['sample_rate'] = sampling_rate
 
-    def write_clusters(self, spike_clusters, spike_times, exdir_group,
-                      **annotations):
-        cl_group = exdir_group.require_group('Clustering')
+    def write_clusters(self, sptrs, path, **annotations):
+        channel_group = self._exdir_directory[path]
+        spike_clusters = self._sptrs_to_spike_clusters(sptrs)
+        spike_times = self._sptrs_to_times(sptrs)
+        cl_group = channel_group.require_group('Clustering')
         if annotations:
             cl_group.attrs = annotations
         cluster_nums = np.unique(spike_clusters)
@@ -124,105 +130,118 @@ class ExdirIO(BaseIO):
         cl_group.require_dataset('nums', spike_clusters)
         cl_group.require_dataset('timestamps', spike_times)
 
-    def write_unit_times(self, sptrs, exdir_group, **annotations):
-        if 'UnitTimes' in exdir_group:
-            shutil.rmtree(exdir_group['UnitTimes'].directory)
-        unit_times_group = exdir_group.require_group('UnitTimes')
+    def write_unit_times(self, units, path, **annotations):
+        channel_group = self._exdir_directory[path]
+        if 'UnitTimes' in channel_group:
+            shutil.rmtree(channel_group['UnitTimes'].directory)
+        unit_times_group = channel_group.require_group('UnitTimes')
         if annotations:
             unit_times_group.attrs = annotations
-        for idx, sptr in enumerate(sptrs):
+        for unit_id, unit in enumerate(units):
+            if len(unit.spiketrains) > 1:
+                raise NotImplementedError('sorry we do not support units ' +
+                                          'with several spiketrains')
+            sptr = unit.spiketrains[0]
             if 'cluster_id' in sptr.annotations:
                 sptr_id = sptr.annotations['cluster_id']
             else:
-                sptr_id = idx
-            times_group = unit_times_group.require_group('{}'.format(sptr_id))
-            sptr_annot = sptr.annotations
-            sptr_annot.update({'name': sptr.name,
-                               'description': sptr.description})
-            times_group.attrs = sptr_annot
-            ts_data = times_group.require_dataset('times', sptr.times)
+                sptr_id = unit_id
+            unit_group = unit_times_group.require_group('{}'.format(sptr_id))
+            unit_attrs = unit.annotations
+            unit.name = unit.name or str(unit_id)
+            unit_attrs.update({'name': unit.name,
+                               'description': unit.description})
+            unit_group.attrs = unit_attrs
+            self.write_spiketimes(sptr, unit_group.name)
 
-    def write_LFP(self, anas, exdir_group, **annotations):
-        group = exdir_group.require_group('LFP')
-        for idx, ana in enumerate(anas):
-            lfp_group = group.require_group('lfp_timeseries_{}'.format(idx))
-            attrs = ana.annotations
-            attrs.update(annotations)
-            attrs.update({'name': ana.name, 'description': ana.description})
-            lfp_group.attrs = attrs
-            lfp_data = lfp_group.require_dataset('data', ana) # TODO sampling_rate etc
-            lfp_data.attrs['sample_rate'] = ana.sampling_rate
+    def write_spiketimes(self, sptr, path, **annotations):
+        channel_group = self._exdir_directory[path]
+        sptr_attrs = sptr.annotations
+        sptr_attrs.update(annotations)
+        ts_data = channel_group.require_dataset('times', sptr.times)
+        sptr_attrs.update({'name': sptr.name,
+                           'description': sptr.description,
+                           'start_time': sptr.t_start,
+                           'stop_time': sptr.t_stop})
+        atr = ts_data.attrs.dict
+        sptr_attrs.update(atr)
+        ts_data.attrs = sptr_attrs
 
-    def write_epochs(self, epochs, group, **annotations):
-        for epo_num, epo in enumerate(epochs):
-            if epo.name is None:
-                epo_group = group.require_group('Epoch_{}'.format(epo_num))
-            else:
-                epo_group = group.require_group(epo.name)
-            if annotations:
-                epo_group.attrs = annotations
-            epo_group.require_dataset('timestamps', epo.times)
-            epo_group.require_dataset('durations', epo.durations)
-            epo_group.require_dataset('data', epo.labels)
-            epo_group.attrs = epo.annotations
+    def write_analogsignal(self, ana, path, name=None, **annotations):
+        channel_group = self._exdir_directory[path]
+        description = ana.description or 'AnalogSignal'
+        group = channel_group.require_group(description)
+        name = name or 'timeseries'
+        lfp_group = group.require_group(name)
+        attrs = ana.annotations
+        attrs.update(annotations)
+        attrs.update({'name': ana.name, 'description': ana.description,
+                      'start_time': ana.t_start, 'stop_time': ana.t_stop})
+        lfp_group.attrs = attrs
+        lfp_data = lfp_group.require_dataset('data', ana)
+        lfp_data.attrs['sample_rate'] = ana.sampling_rate
 
-    def write_block(self, blk):
-        # TODO save stuff even if no channel_indexes?
-        if any(isinstance(ana, AnalogSignal) for seg in blk.segments
-               for ana in seg.analogsignals):
-            print('Warning: saving analogsignals is not supported by this' +
-                  'funtion, use write_LFP in stead')
+    def write_epoch(self, epo, path, name=None, **annotations):
+        group = self._exdir_directory[path]
+        name = name or 'epoch'
+        epo_group = group.require_group(name)
+        attrs = epo.annotations
+        attrs.update(annotations)
+        attrs.update({'name': epo.name, 'description': epo.description})
+        epo_group.require_dataset('timestamps', epo.times)
+        epo_group.require_dataset('durations', epo.durations)
+        epo_group.require_dataset('data', epo.labels)
+        epo_group.attrs = attrs
 
-        if not all(['group_id' in chx.annotations
-                    for chx in blk.channel_indexes]):
-            print('Warning "group_id" is not in channel_index.annotations ' +
-                  'indexing group_id as appended to Block.channel_indexes')
-            channel_indexes = {i: chx for i, chx in
-                               enumerate(blk.channel_indexes)}
-        else:
-            channel_indexes = {int(chx.annotations['group_id']): chx
-                               for chx in blk.channel_indexes}
+    def write_block(self, blk, elphys_directory_name='electrophysiology'):
         if len(blk.segments) > 1:
-            raise NotImplementedError('sorry, exdir supports only one segment')
+            raise ValueError('sorry, exdir supports only one segment')
         seg = blk.segments[0]
         annotations = blk.annotations
         annotations.update({'session_duration': seg.t_stop - seg.t_start})
         self._exdir_directory.attrs = annotations
-        if len(seg.epochs) > 0:
-            self.write_epochs([epo for epo in seg.epochs], self._epochs,
-                              t_start=seg.t_start, t_stop=seg.t_stop)
-        elphys = self._processing.require_group('electrophysiology') # TODO find right place without name
-        for group_id, chx in channel_indexes.items():
-            grp_name = 'channel_group_{}'.format(group_id)
-            exdir_group = elphys.require_group(grp_name)
-            annotations = {'electrode_idx': chx.index,
-                           'electrode_group_id': group_id,
-                           'start_time': seg.t_start,
-                           'stop_time': seg.t_stop,
-                           'electrode_identities': chx.channel_ids}
-            exdir_group.attrs = annotations
-            sptrs = [st for st in seg.spiketrains
-                     if st.channel_index == chx]
-            sampling_rate = sptrs[0].sampling_rate.rescale('Hz')
-            spike_times = self._sptrs_to_times(sptrs)
-            ns, = spike_times.shape
-            num_chans = len(chx.index)
-            waveforms = self._sptrs_to_wfseriesf(sptrs)
-            assert waveforms.shape[:2] == (ns, num_chans)
-            self.write_event_waveform(spike_times, waveforms, sampling_rate,
-                                      exdir_group, **annotations)
-            self.write_unit_times(sptrs, exdir_group, **annotations)
+        for epo_num, epo in enumerate(seg.epochs):
+            name = 'Epoch_{}'.format(epo_num)
+            self.write_epoch(epo, self._epochs.name, name=name,
+                             start_time=seg.t_start, stop_time=seg.t_stop)
+        elphys = self._processing.create_group(elphys_directory_name)
+        for chx in blk.channel_indexes:
+            self.write_channelindex(chx, elphys.name, start_time=seg.t_start,
+                                    stop_time=seg.t_stop)
 
-            spike_clusters = self._sptrs_to_spike_clusters(sptrs)
-            assert spike_clusters.shape == (ns,)
-            if 'group' in chx.annotations:
-                cluster_groups = chx.annotations['group']
-            else:
-                cluster_groups = {int(cl): 'Unsorted'
-                                  for cl in np.unique(spike_clusters)}
-            annotations.update({'cluster_groups': cluster_groups})
-            self.write_clusters(spike_clusters, spike_times, exdir_group,
-                                **annotations)
+    def write_channelindex(self, chx, path, **annotations):
+        group = self._exdir_directory[path]
+        if 'group_id' in chx.annotations:
+            group_id = chx.annotations['group_id']
+            group_name = 'channel_group_{}'.format(group_id)
+        else:
+            print('Warning: "group_id" is not in channel_index.annotations ' +
+                  'setting electrode_group_id as None and group name ' +
+                  'as unique string')
+            group_id = None
+            cnt = 0
+            while True:
+                group_name = 'channel_group_{}'.format(cnt)
+                if group_name in group.keys():
+                    cnt += 1
+                else:
+                    break
+        
+        channel_group = group.create_group(group_name)
+        attrs = {'electrode_idx': chx.index,
+                 'electrode_group_id': group_id,
+                 'electrode_identities': chx.channel_ids}
+        attrs.update(annotations)
+        channel_group.attrs = attrs
+        sptrs = [st for unit in chx.units for st in unit.spiketrains]
+        self.write_event_waveform(sptrs, channel_group.name, **attrs)
+        self.write_clusters(sptrs, channel_group.name, **attrs)
+        units = [unit for unit in chx.units]
+        self.write_unit_times(units, channel_group.name, **attrs)
+        for idx, ana in enumerate(chx.analogsignals):
+            self.write_analogsignal(ana, channel_group.name,
+                                    name='timeseries_{}'.format(idx),
+                                    **attrs)
 
     def read_block(self,
                    lazy=False,
@@ -234,7 +253,7 @@ class ExdirIO(BaseIO):
 
         '''
         blk = Block(file_origin=self._absolute_directory_path,
-                    **self._exdir_directory.attrs._open_or_create())
+                    **self._exdir_directory.attrs.dict)
         seg = Segment(name='Segment #0', index=0)
         blk.segments.append(seg)
         if cascade:
@@ -242,48 +261,14 @@ class ExdirIO(BaseIO):
                 epo = self.read_epoch(group.name, cascade, lazy)
                 seg.epochs.append(epo)
             for channel_group in self._processing[elphys_directory_name].values():
-                group_id = channel_group.attrs['electrode_group_id']
-                chx = ChannelIndex(
-                    name='Channel group {}'.format(group_id),
-                    index=channel_group.attrs['electrode_idx'],
-                    channel_ids=channel_group.attrs['electrode_identities'],
-                    **{'group_id': group_id}
-                )
+                chx = self.read_channelindex(channel_group.name, 
+                                             cascade=cascade,
+                                             lazy=lazy,
+                                             read_waveforms=read_waveforms)
                 blk.channel_indexes.append(chx)
-                if 'LFP' in channel_group:
-                    for lfp_group in channel_group['LFP'].values():
-                        ana = self.read_analogsignal(lfp_group.name,
-                                                     cascade=cascade,
-                                                     lazy=lazy)
-                        chx.analogsignals.append(ana)
-                        ana.channel_index = chx
-                        seg.analogsignals.append(ana)
-                sptrs = []
-                if 'UnitTimes' in channel_group:
-                    for unit_group in channel_group['UnitTimes'].values():
-                        sptr = self.read_spiketrain(
-                            unit_group.name,
-                            cascade=cascade,
-                            lazy=lazy,
-                            read_waveforms=read_waveforms
-                        )
-                        sptrs.append(sptr)
-                elif 'EventWaveform' in channel_group:
-                    sptr = self.read_spiketrain(
-                        channel_group['EventWaveform'].name,
-                        cascade=cascade,
-                        lazy=lazy,
-                        read_waveforms=read_waveforms
-                    )
-                    sptrs.append(sptr)
-                for sptr in sptrs:
-                    unit = Unit(name=sptr.name,
-                                **sptr.annotations)
-                    unit.spiketrains.append(sptr)
-                    unit.channel_index = chx
-                    sptr.channel_index = chx
-                    chx.units.append(unit)
-                    seg.spiketrains.append(sptr)
+                seg.analogsignals.extend(chx.analogsignals)
+                seg.spiketrains.extend([sptr for unit in chx.units
+                                        for sptr in unit.spiketrains])
         return blk
 
     def read_segment(self, cascade=True, lazy=False, read_waveforms=True):
@@ -323,7 +308,8 @@ class ExdirIO(BaseIO):
                         seg.spiketrains.append(sptr)
         return seg
 
-    def read_channelindex(self, path, cascade=True, Lazy=False):
+    def read_channelindex(self, path, cascade=True, lazy=False,
+                          read_waveforms=True):
         channel_group = self._exdir_directory[path]
         group_id = channel_group.attrs['electrode_group_id']
         chx = ChannelIndex(
@@ -339,26 +325,29 @@ class ExdirIO(BaseIO):
                                              lazy=lazy)
                 chx.analogsignals.append(ana)
                 ana.channel_index = chx
-        sptr = None
+        sptrs = []
         if 'UnitTimes' in channel_group:
             for unit_group in channel_group['UnitTimes'].values():
-                sptr = self.read_spiketrain(
+                unit = self.read_unit(
                     unit_group.name,
                     cascade=cascade,
                     lazy=lazy,
                     read_waveforms=read_waveforms
                 )
+                unit.channel_index = chx
+                chx.units.append(unit)
+                sptr = unit.spiketrains[0]
+                sptr.channel_index = chx
+                
         elif 'EventWaveform' in channel_group:
             sptr = self.read_spiketrain(
-                channel_group['UnitTimes'].name,
+                channel_group['EventWaveform'].name,
                 cascade=cascade,
                 lazy=lazy,
                 read_waveforms=read_waveforms
             )
-        if sptr is not None:
-            cluster_id = sptr.annotations['cluster_id']
-            unit = Unit(name='Cluster #{}'.format(cluster_id),
-                        **{'cluster_id': cluster_id})
+            unit = Unit(name=sptr.name,
+                        **sptr.annotations)
             unit.spiketrains.append(sptr)
             unit.channel_index = chx
             sptr.channel_index = chx
@@ -379,9 +368,9 @@ class ExdirIO(BaseIO):
                                      group['data'].attrs['unit'])
         else:
             labels = None
-        annotations = group.attrs._open_or_create()
+        annotations = group.attrs.dict
         epo = Epoch(times=times, durations=durations, labels=labels,
-                    name=group.object_name, **annotations)
+                    **annotations)
 
         return epo
 
@@ -391,9 +380,19 @@ class ExdirIO(BaseIO):
         ana = AnalogSignal(signal.data,
                            units=signal.attrs["unit"],
                            sampling_rate=signal.attrs['sample_rate'],
-                           **group.attrs._open_or_create())
+                           **group.attrs.dict)
         return ana
-
+    
+    def read_unit(self, path, cascade=True, lazy=False, cluster_num=None,
+                  read_waveforms=True):
+        group = self._exdir_directory[path]
+        assert group.parent.object_name == 'UnitTimes'
+        unit = Unit(**group.attrs.dict)
+        sptr = self.read_spiketrain(path, cascade, lazy, cluster_num,
+                                    read_waveforms)
+        unit.spiketrains.append(sptr)
+        return unit
+    
     def read_spiketrain(self, path, cascade=True, lazy=False, cluster_num=None,
                         read_waveforms=True):
         group = self._exdir_directory[path]
@@ -403,13 +402,13 @@ class ExdirIO(BaseIO):
                                 group['times'].attrs['unit'])
             t_stop = group.parent.attrs['stop_time']
             t_start = group.parent.attrs['start_time']
+            metadata.update(group['times'].attrs.dict)
             if read_waveforms:
                 wf_group = group.parent.parent['EventWaveform']
                 cluster_group = group.parent.parent['Clustering']
                 cluster_num = cluster_num or int(group.object_name)
                 cluster_ids = cluster_group['nums'].data
                 indices, = np.where(cluster_ids == cluster_num)
-                metadata.update(group.attrs._open_or_create())
         elif group.object_name == 'EventWaveform':
             sub_group = group.values()[0]
             # TODO assert all timestamps to be equal if several waveform_timeseries exists
@@ -430,7 +429,7 @@ class ExdirIO(BaseIO):
                 indices = range(len(times))
             t_stop = sub_group.attrs['stop_time']
             t_start = sub_group.attrs['start_time']
-            metadata.update(sub_group.attrs._open_or_create())
+            metadata.update(sub_group.attrs.dict)
         else:
             raise ValueError('Expected a sub group of UnitTimes or an ' +
                              'EventWaveform group')
@@ -440,7 +439,7 @@ class ExdirIO(BaseIO):
                 data = pq.Quantity(wf["data"].data[indices, :, :],
                                    wf["data"].attrs['unit'])
                 waveforms.append(data)
-                metadata.update(wf.attrs._open_or_create())
+                metadata.update(wf.attrs.dict)
             waveforms = np.vstack(waveforms)
             # TODO assert shape of waveforms relative to channel_ids etc
             sampling_rate = wf["data"].attrs['sample_rate']
