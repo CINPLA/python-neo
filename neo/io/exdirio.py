@@ -325,8 +325,7 @@ class ExdirIO(BaseIO):
             ana = AnalogSignal(
                 signal.data,
                 units=signal.attrs["unit"],
-                sampling_rate=lfp_grp.attrs['sample_rate']
-                )
+                sampling_rate=lfp_grp.attrs['sample_rate'])
             self._segments[lfp_grp.attrs['segment_id']].analogsignals.append(ana)
             chx = self._channel_indexes[lfp_grp.attrs['electrode_group_id']]
             chx.analogsignals.append(ana)
