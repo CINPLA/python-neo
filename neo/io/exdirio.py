@@ -189,7 +189,8 @@ class ExdirIO(BaseIO):
         attrs.update(annotations)
         attrs.update({'name': epo.name, 'description': epo.description})
         epo_group.require_dataset('timestamps', epo.times)
-        epo_group.require_dataset('durations', epo.durations)
+        if epo.durations is not None:
+            epo_group.require_dataset('durations', epo.durations)
         epo_group.require_dataset('data', epo.labels)
         epo_group.attrs = attrs
 

@@ -289,7 +289,8 @@ class TestExdirIO(unittest.TestCase):
         for key in sptrs.keys():
             np.testing.assert_array_equal(sptrs[key], sptrs_load[key])
             np.testing.assert_equal(sptrs[key].name, sptrs_load[key].name)
-            np.testing.assert_equal(sptrs[key].description, sptrs_load[key].description)
+            np.testing.assert_equal(sptrs[key].description,
+                                    sptrs_load[key].description)
             for k, v in sptrs[key].annotations.items():
                 if k == 'description' or k == 'name':
                     continue
@@ -327,13 +328,12 @@ class TestExdirIO(unittest.TestCase):
         io.write_block(self.blk)
         io = ExdirIO(self.fname)
         blk = io.read_block()
-        epos = {epo.name: epo
-                 for epo in self.blk.segments[0].epochs}
-        epos_load = {epo.name: epo
-                 for epo in blk.segments[0].epochs}
+        epos = {epo.name: epo for epo in self.blk.segments[0].epochs}
+        epos_load = {epo.name: epo for epo in blk.segments[0].epochs}
         for key in epos.keys():
             np.testing.assert_array_equal(epos[key], epos_load[key])
-            np.testing.assert_array_equal(epos[key].durations, epos_load[key].durations)
+            np.testing.assert_array_equal(epos[key].durations,
+                                          epos_load[key].durations)
             np.testing.assert_equal(epos[key].name, epos_load[key].name)
     
     def test_write_read_block_ana_equal(self):
@@ -345,14 +345,11 @@ class TestExdirIO(unittest.TestCase):
         io.write_analogsignal(ana, lfp_group.name)
         io = ExdirIO(self.fname)
         blk = io.read_block()
-        anas = {ana.name: ana
-                 for ana in self.blk.segments[0].analogsignals}
-        anas_load = {ana.name: ana
-                 for ana in blk.segments[0].analogsignals}
+        anas = {ana.name: ana for ana in self.blk.segments[0].analogsignals}
+        anas_load = {ana.name: ana for ana in blk.segments[0].analogsignals}
         for key in anas.keys():
             np.testing.assert_array_equal(anas[key], anas_load[key])
             np.testing.assert_equal(anas[key].name, anas_load[key].name)
-
 
 
 if __name__ == "__main__":
