@@ -359,8 +359,12 @@ class ExdirIO(BaseIO):
         group = self._exdir_directory[path]
         times = pq.Quantity(group['timestamps'].data,
                             group['timestamps'].attrs['unit'])
-        durations = pq.Quantity(group['durations'].data,
-                                group['durations'].attrs['unit'])
+        
+        if "durations" in group:
+            durations = pq.Quantity(group['durations'].data, group['durations'].attrs['unit'])
+        else:
+            durations = None
+            
         if 'data' in group:
             if 'unit' not in group['data'].attrs:
                 labels = group['data'].data
@@ -407,11 +411,11 @@ class ExdirIO(BaseIO):
             if read_waveforms:
                 wf_group = group.parent.parent['EventWaveform']
                 cluster_group = group.parent.parent['Clustering']
-                cluster_num = cluster_num or int(group.object_name)
+                cluster_num = cluster_num or int(group.object_name.split("_")[-1])
                 cluster_ids = cluster_group['nums'].data
                 indices, = np.where(cluster_ids == cluster_num)
         elif group.object_name == 'EventWaveform':
-            sub_group = group.values()[0]
+            sub_group = list(group.values())[0]
             # TODO assert all timestamps to be equal if several waveform_timeseries exists
             wf_group = group
             if 'Clustering' in group.parent:
