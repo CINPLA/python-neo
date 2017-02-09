@@ -192,7 +192,7 @@ class TestExdirIO(unittest.TestCase):
         np.testing.assert_array_equal(ana_group['data'].data, ana.magnitude)
         np.testing.assert_equal(ana_group.attrs['start_time'], ana.t_start)
         np.testing.assert_equal(ana_group.attrs['stop_time'], ana.t_stop)
-        np.testing.assert_equal(ana_group['data'].attrs['sample_rate'],
+        np.testing.assert_equal(ana_group.attrs['sample_rate'],
                                 ana.sampling_rate)
     
     def test_write_channelindex(self):
@@ -210,7 +210,7 @@ class TestExdirIO(unittest.TestCase):
                 np.testing.assert_array_equal(ana_group['data'].data, ana.magnitude)
                 np.testing.assert_equal(ana_group.attrs['start_time'], ana.t_start)
                 np.testing.assert_equal(ana_group.attrs['stop_time'], ana.t_stop)
-                np.testing.assert_equal(ana_group['data'].attrs['sample_rate'],
+                np.testing.assert_equal(ana_group.attrs['sample_rate'],
                                         ana.sampling_rate)
             
             unit_times_group = ex['UnitTimes']
@@ -247,7 +247,7 @@ class TestExdirIO(unittest.TestCase):
                 np.testing.assert_array_equal(ana_group['data'].data, ana.magnitude)
                 np.testing.assert_equal(ana_group.attrs['start_time'], ana.t_start)
                 np.testing.assert_equal(ana_group.attrs['stop_time'], ana.t_stop)
-                np.testing.assert_equal(ana_group['data'].attrs['sample_rate'],
+                np.testing.assert_equal(ana_group.attrs['sample_rate'],
                                         ana.sampling_rate)
             
             unit_times_group = ex['UnitTimes']

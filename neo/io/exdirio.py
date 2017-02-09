@@ -179,7 +179,7 @@ class ExdirIO(BaseIO):
                       'start_time': ana.t_start, 'stop_time': ana.t_stop})
         lfp_group.attrs = attrs
         lfp_data = lfp_group.require_dataset('data', ana)
-        lfp_data.attrs['sample_rate'] = ana.sampling_rate
+        lfp_group.attrs['sample_rate'] = ana.sampling_rate
 
     def write_epoch(self, epo, path, name=None, **annotations):
         group = self._exdir_directory[path]
@@ -384,10 +384,10 @@ class ExdirIO(BaseIO):
         signal = group["data"]
         ana = AnalogSignal(signal.data,
                            units=signal.attrs["unit"],
-                           sampling_rate=signal.attrs['sample_rate'],
+                           sampling_rate=group.attrs['sample_rate'],
                            **group.attrs.dict)
         return ana
-    
+
     def read_unit(self, path, cascade=True, lazy=False, cluster_num=None,
                   read_waveforms=True):
         group = self._exdir_directory[path]
@@ -397,7 +397,7 @@ class ExdirIO(BaseIO):
                                     read_waveforms)
         unit.spiketrains.append(sptr)
         return unit
-    
+
     def read_spiketrain(self, path, cascade=True, lazy=False, cluster_num=None,
                         read_waveforms=True):
         group = self._exdir_directory[path]
