@@ -227,7 +227,7 @@ class ExdirIO(BaseIO):
                     cnt += 1
                 else:
                     break
-        
+
         channel_group = group.create_group(group_name)
         attrs = {'electrode_idx': chx.index,
                  'electrode_group_id': group_id,
@@ -235,8 +235,9 @@ class ExdirIO(BaseIO):
         attrs.update(annotations)
         channel_group.attrs = attrs
         sptrs = [st for unit in chx.units for st in unit.spiketrains]
-        self.write_event_waveform(sptrs, channel_group.name, **attrs)
-        self.write_clusters(sptrs, channel_group.name, **attrs)
+        if sptrs[0].waveforms is not None:
+            self.write_event_waveform(sptrs, channel_group.name, **attrs)
+            self.write_clusters(sptrs, channel_group.name, **attrs)
         units = [unit for unit in chx.units]
         self.write_unit_times(units, channel_group.name, **attrs)
         for idx, ana in enumerate(chx.analogsignals):
@@ -262,7 +263,7 @@ class ExdirIO(BaseIO):
                 epo = self.read_epoch(group.name, cascade, lazy)
                 seg.epochs.append(epo)
             for channel_group in self._processing[elphys_directory_name].values():
-                chx = self.read_channelindex(channel_group.name, 
+                chx = self.read_channelindex(channel_group.name,
                                              cascade=cascade,
                                              lazy=lazy,
                                              read_waveforms=read_waveforms)
@@ -339,7 +340,7 @@ class ExdirIO(BaseIO):
                 chx.units.append(unit)
                 sptr = unit.spiketrains[0]
                 sptr.channel_index = chx
-                
+
         elif 'EventWaveform' in channel_group:
             sptr = self.read_spiketrain(
                 channel_group['EventWaveform'].name,
@@ -359,12 +360,12 @@ class ExdirIO(BaseIO):
         group = self._exdir_directory[path]
         times = pq.Quantity(group['timestamps'].data,
                             group['timestamps'].attrs['unit'])
-        
+
         if "durations" in group:
             durations = pq.Quantity(group['durations'].data, group['durations'].attrs['unit'])
         else:
             durations = None
-            
+
         if 'data' in group:
             if 'unit' not in group['data'].attrs:
                 labels = group['data'].data
