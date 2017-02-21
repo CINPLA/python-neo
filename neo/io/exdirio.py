@@ -111,11 +111,14 @@ class ExdirIO(BaseIO):
         group = channel_group.require_group('EventWaveform')
         wf_group = group.require_group('waveform_timeseries')
         attr = {'num_samples': len(spike_times),
-                'sample_length': waveforms.shape[1]}
+                'sample_length': waveforms.shape[1],
+                'sample_rate': sampling_rate}
         attr.update(annotations)
         wf_group.attrs = attr
         ts_data = wf_group.require_dataset("timestamps", spike_times)
+        ts_data.attrs['num_samples'] = len(spike_times)
         wf = wf_group.require_dataset("data", waveforms)
+        wf.attrs['num_samples'] = len(spike_times)
         wf.attrs['sample_rate'] = sampling_rate
 
     def write_clusters(self, sptrs, path, **annotations):
@@ -126,9 +129,12 @@ class ExdirIO(BaseIO):
         if annotations:
             cl_group.attrs = annotations
         cluster_nums = np.unique(spike_clusters)
-        cl_group.require_dataset('cluster_nums', cluster_nums)
-        cl_group.require_dataset('nums', spike_clusters)
-        cl_group.require_dataset('timestamps', spike_times)
+        dset = cl_group.require_dataset('nums', spike_clusters)
+        dset.attrs['num_samples'] = len(spike_times)
+        dset = cl_group.require_dataset('cluster_nums', cluster_nums)
+        dset.attrs['num_samples'] = len(cluster_nums)
+        dset = cl_group.require_dataset('timestamps', spike_times)
+        dset.attrs['num_samples'] = len(spike_times)
 
     def write_unit_times(self, units, path, **annotations):
         channel_group = self._exdir_directory[path]
@@ -147,7 +153,7 @@ class ExdirIO(BaseIO):
             else:
                 sptr_id = unit_id
             unit_group = unit_times_group.require_group('{}'.format(sptr_id))
-            unit_attrs = unit.annotations
+            unit_attrs = copy.deepcopy(unit.annotations)
             unit.name = unit.name or str(unit_id)
             unit_attrs.update({'name': unit.name,
                                'description': unit.description})
@@ -156,9 +162,10 @@ class ExdirIO(BaseIO):
 
     def write_spiketimes(self, sptr, path, **annotations):
         channel_group = self._exdir_directory[path]
-        sptr_attrs = sptr.annotations
+        sptr_attrs = copy.deepcopy(sptr.annotations)
         sptr_attrs.update(annotations)
         ts_data = channel_group.require_dataset('times', sptr.times)
+        ts_data.attrs['num_samples'] = len(sptr.times)
         sptr_attrs.update({'name': sptr.name,
                            'description': sptr.description,
                            'start_time': sptr.t_start,
@@ -173,32 +180,39 @@ class ExdirIO(BaseIO):
         group = channel_group.require_group(description)
         name = name or 'timeseries'
         lfp_group = group.require_group(name)
-        attrs = ana.annotations
+        attrs = copy.deepcopy(ana.annotations)
         attrs.update(annotations)
-        attrs.update({'name': ana.name, 'description': ana.description,
-                      'start_time': ana.t_start, 'stop_time': ana.t_stop})
+        attrs.update({'name': ana.name,
+                      'description': ana.description,
+                      'start_time': ana.t_start,
+                      'stop_time': ana.t_stop,
+                      'sample_rate': ana.sampling_rate})
         lfp_group.attrs = attrs
         lfp_data = lfp_group.require_dataset('data', ana)
-        lfp_group.attrs['sample_rate'] = ana.sampling_rate
+        lfp_data.attrs['num_samples'] = len(ana)
+        lfp_data.attrs['sample_rate'] = ana.sampling_rate # TODO not save twice
 
     def write_epoch(self, epo, path, name=None, **annotations):
         group = self._exdir_directory[path]
         name = name or 'epoch'
         epo_group = group.require_group(name)
-        attrs = epo.annotations
+        attrs = copy.deepcopy(epo.annotations)
         attrs.update(annotations)
         attrs.update({'name': epo.name, 'description': epo.description})
-        epo_group.require_dataset('timestamps', epo.times)
+        dset = epo_group.require_dataset('timestamps', epo.times)
+        dset.attrs['num_samples'] = len(epo.times)
         if epo.durations is not None:
-            epo_group.require_dataset('durations', epo.durations)
-        epo_group.require_dataset('data', epo.labels)
+            dset = epo_group.require_dataset('durations', epo.durations)
+            dset.attrs['num_samples'] = len(epo.durations)
+        dset = epo_group.require_dataset('data', epo.labels)
+        dset.attrs['num_samples'] = len(epo.labels)
         epo_group.attrs = attrs
 
     def write_block(self, blk, elphys_directory_name='electrophysiology'):
         if len(blk.segments) > 1:
             raise ValueError('sorry, exdir supports only one segment')
         seg = blk.segments[0]
-        annotations = blk.annotations
+        annotations = copy.deepcopy(blk.annotations)
         annotations.update({'session_duration': seg.t_stop - seg.t_start})
         self._exdir_directory.attrs = annotations
         for epo_num, epo in enumerate(seg.epochs):
@@ -209,6 +223,28 @@ class ExdirIO(BaseIO):
         for chx in blk.channel_indexes:
             self.write_channelindex(chx, elphys.name, start_time=seg.t_start,
                                     stop_time=seg.t_stop)
+        if len(blk.channel_indexes) == 0:
+            self.write_channelindex(chx, elphys.name, start_time=seg.t_start,
+                                    stop_time=seg.t_stop)
+
+    def write_segment(self, seg, path, **annotations):
+        group = self._exdir_directory[path]
+        segment_group = group.create_group('segment_0')
+        attrs = {'segment_id': seg.index}
+        attrs.update(annotations)
+        segment_group.attrs = attrs
+        for idx, ana in enumerate(seg.analogsignals):
+            self.write_analogsignal(ana, segment_group.name,
+                                    name='timeseries_{}'.format(idx),
+                                    **attrs)
+        sptrs = [st for st in seg.spiketrains]
+        if len(sptrs) == 0:
+            return
+        if sptrs[0].waveforms is not None:
+            self.write_event_waveform(sptrs, segment_group.name, **attrs)
+            self.write_clusters(sptrs, segment_group.name, **attrs)
+        units = [unit for unit in chx.units]
+        self.write_unit_times(units, segment_group.name, **attrs)
 
     def write_channelindex(self, chx, path, **annotations):
         group = self._exdir_directory[path]
@@ -234,16 +270,18 @@ class ExdirIO(BaseIO):
                  'electrode_identities': chx.channel_ids}
         attrs.update(annotations)
         channel_group.attrs = attrs
+        for idx, ana in enumerate(chx.analogsignals):
+            self.write_analogsignal(ana, channel_group.name,
+                                    name='timeseries_{}'.format(idx),
+                                    **attrs)
         sptrs = [st for unit in chx.units for st in unit.spiketrains]
+        if len(sptrs) == 0:
+            return
         if sptrs[0].waveforms is not None:
             self.write_event_waveform(sptrs, channel_group.name, **attrs)
             self.write_clusters(sptrs, channel_group.name, **attrs)
         units = [unit for unit in chx.units]
         self.write_unit_times(units, channel_group.name, **attrs)
-        for idx, ana in enumerate(chx.analogsignals):
-            self.write_analogsignal(ana, channel_group.name,
-                                    name='timeseries_{}'.format(idx),
-                                    **attrs)
 
     def read_block(self,
                    lazy=False,
@@ -410,6 +448,10 @@ class ExdirIO(BaseIO):
             t_start = group.parent.attrs['start_time']
             metadata.update(group['times'].attrs.dict)
             if read_waveforms:
+                if not 'EventWaveform' in group.parent.parent:
+                    raise ValueError('No EventWaveform detected in exdir ' +
+                                     'directory, please revise directory ' +
+                                     'or set read_waveforms to False')
                 wf_group = group.parent.parent['EventWaveform']
                 cluster_group = group.parent.parent['Clustering']
                 cluster_num = cluster_num or int(group.object_name.split("_")[-1])
