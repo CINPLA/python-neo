@@ -83,6 +83,8 @@ class KwikIO(BaseIO):
         Arguments:
             filename : the filename
         """
+        if not HAVE_KWIK:
+            raise KWIK_ERR
         BaseIO.__init__(self)
         self.filename = os.path.abspath(filename)
         model = kwik.KwikModel(self.filename) # TODO this group is loaded twice

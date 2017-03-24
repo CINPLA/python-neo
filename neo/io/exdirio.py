@@ -35,8 +35,10 @@ if python_version == 2:
 try:
     import exdir
     HAVE_EXDIR = True
-except ImportError:
+    EXDIR_ERR = None
+except ImportError as err:
     HAVE_EXDIR = False
+    EXDIR_ERR = err
 
 
 class ExdirIO(BaseIO):
@@ -67,6 +69,8 @@ class ExdirIO(BaseIO):
         Arguments:
             directory_path : the directory path
         """
+        if not HAVE_EXDIR:
+            raise EXDIR_ERR
         BaseIO.__init__(self)
         self._absolute_directory_path = dirname
         self._path, relative_directory_path = os.path.split(dirname)
@@ -205,7 +209,7 @@ class ExdirIO(BaseIO):
             name = 'Epoch_{}'.format(epo_num)
             self.write_epoch(epo, self._epochs.name, name=name,
                              start_time=seg.t_start, stop_time=seg.t_stop)
-        elphys = self._processing.create_group(elphys_directory_name)
+        elphys = self._processing.require_group(elphys_directory_name)
         for chx in blk.channel_indexes:
             self.write_channelindex(chx, elphys.name, start_time=seg.t_start,
                                     stop_time=seg.t_stop)
@@ -228,7 +232,7 @@ class ExdirIO(BaseIO):
                 else:
                     break
         
-        channel_group = group.create_group(group_name)
+        channel_group = group.require_group(group_name)
         attrs = {'electrode_idx': chx.index,
                  'electrode_group_id': group_id,
                  'electrode_identities': chx.channel_ids}
