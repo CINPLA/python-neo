@@ -219,7 +219,7 @@ class ExdirIO(BaseIO):
             name = 'Epoch_{}'.format(epo_num)
             self.write_epoch(epo, self._epochs.name, name=name,
                              start_time=seg.t_start, stop_time=seg.t_stop)
-        elphys = self._processing.create_group(elphys_directory_name)
+        elphys = self._processing.require_group(elphys_directory_name)
         for chx in blk.channel_indexes:
             self.write_channelindex(chx, elphys.name, start_time=seg.t_start,
                                     stop_time=seg.t_stop)
@@ -229,7 +229,7 @@ class ExdirIO(BaseIO):
 
     def write_segment(self, seg, path, **annotations):
         group = self._exdir_directory[path]
-        segment_group = group.create_group('segment_0')
+        segment_group = group.require_group('segment_0')
         attrs = {'segment_id': seg.index}
         attrs.update(annotations)
         segment_group.attrs = attrs
@@ -264,7 +264,7 @@ class ExdirIO(BaseIO):
                 else:
                     break
 
-        channel_group = group.create_group(group_name)
+        channel_group = group.require_group(group_name)
         attrs = {'electrode_idx': chx.index,
                  'electrode_group_id': group_id,
                  'electrode_identities': chx.channel_ids}
