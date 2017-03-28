@@ -170,7 +170,7 @@ class ExdirIO(BaseIO):
                            'description': sptr.description,
                            'start_time': sptr.t_start,
                            'stop_time': sptr.t_stop})
-        atr = ts_data.attrs.dict
+        atr = ts_data.attrs.to_dict()
         sptr_attrs.update(atr)
         ts_data.attrs = sptr_attrs
 
@@ -293,7 +293,7 @@ class ExdirIO(BaseIO):
 
         '''
         blk = Block(file_origin=self._absolute_directory_path,
-                    **self._exdir_directory.attrs.dict)
+                    **self._exdir_directory.attrs.to_dict())
         seg = Segment(name='Segment #0', index=0)
         blk.segments.append(seg)
         if cascade:
@@ -356,7 +356,8 @@ class ExdirIO(BaseIO):
             name='Channel group {}'.format(group_id),
             index=channel_group.attrs['electrode_idx'],
             channel_ids=channel_group.attrs['electrode_identities'],
-            **{'group_id': group_id}
+            **{'group_id': group_id,
+               'exdir_path': path}
         )
         if 'LFP' in channel_group:
             for lfp_group in channel_group['LFP'].values():
@@ -396,42 +397,65 @@ class ExdirIO(BaseIO):
 
     def read_epoch(self, path, cascade=True, lazy=False):
         group = self._exdir_directory[path]
-        times = pq.Quantity(group['timestamps'].data,
-                            group['timestamps'].attrs['unit'])
+        if lazy:
+            times = []
+        else:
+            times = pq.Quantity(group['timestamps'].data,
+                                group['timestamps'].attrs['unit'])
 
-        if "durations" in group:
+        if "durations" in group and not lazy:
             durations = pq.Quantity(group['durations'].data, group['durations'].attrs['unit'])
+        elif "durations" in group and lazy:
+            durations = []
         else:
             durations = None
 
-        if 'data' in group:
+        if 'data' in group and not lazy:
             if 'unit' not in group['data'].attrs:
                 labels = group['data'].data
             else:
                 labels = pq.Quantity(group['data'].data,
                                      group['data'].attrs['unit'])
+        elif 'data' in group and lazy:
+            labels = []
         else:
             labels = None
-        annotations = group.attrs.dict
+        annotations = {'exdir_path': path}
+        annotations.update(group.attrs.to_dict())
+        if lazy:
+            lazy_shape = (group.attrs['num_samples'],)
+        else:
+            lazy_shape = None
         epo = Epoch(times=times, durations=durations, labels=labels,
-                    **annotations)
+                    lazy_shape=lazy_shape, **annotations)
 
         return epo
 
     def read_analogsignal(self, path, cascade=True, lazy=False):
         group = self._exdir_directory[path]
         signal = group["data"]
-        ana = AnalogSignal(signal.data,
-                           units=signal.attrs["unit"],
-                           sampling_rate=group.attrs['sample_rate'],
-                           **group.attrs.dict)
+        attrs = {'exdir_path': path}
+        attrs.update(group.attrs.to_dict())
+        if lazy:
+            ana = AnalogSignal([],
+                               lazy_shape=(signal.attrs["num_samples"],),
+                               units=signal.attrs["unit"],
+                               sampling_rate=group.attrs['sample_rate'],
+                               **attrs)
+        else:
+            ana = AnalogSignal(signal.data,
+                               units=signal.attrs["unit"],
+                               sampling_rate=group.attrs['sample_rate'],
+                               **attrs)
         return ana
 
     def read_unit(self, path, cascade=True, lazy=False, cluster_num=None,
                   read_waveforms=True):
         group = self._exdir_directory[path]
         assert group.parent.object_name == 'UnitTimes'
-        unit = Unit(**group.attrs.dict)
+        attrs = {'exdir_path': path}
+        attrs.update(group.attrs.to_dict())
+        unit = Unit(**attrs)
         sptr = self.read_spiketrain(path, cascade, lazy, cluster_num,
                                     read_waveforms)
         unit.spiketrains.append(sptr)
@@ -442,11 +466,14 @@ class ExdirIO(BaseIO):
         group = self._exdir_directory[path]
         metadata = {}
         if group.parent.object_name == 'UnitTimes':
-            times = pq.Quantity(group['times'].data,
-                                group['times'].attrs['unit'])
+            if lazy:
+                times = [] * pq.s
+            else:
+                times = pq.Quantity(group['times'].data,
+                                    group['times'].attrs['unit'])
             t_stop = group.parent.attrs['stop_time']
             t_start = group.parent.attrs['start_time']
-            metadata.update(group['times'].attrs.dict)
+            metadata.update(group['times'].attrs.to_dict())
             if read_waveforms:
                 if not 'EventWaveform' in group.parent.parent:
                     raise ValueError('No EventWaveform detected in exdir ' +
@@ -469,31 +496,41 @@ class ExdirIO(BaseIO):
                 else:
                     cluster_num = cluster_num or int(np.unique(cluster_ids))
                 indices, = np.where(cluster_ids == cluster_num)
-                times = pq.Quantity(sub_group["timestamps"].data[indices],
-                                    sub_group["timestamps"].attrs['unit'])
+                if lazy:
+                    times = [] * pq.s
+                else:
+                    times = pq.Quantity(sub_group["timestamps"].data[indices],
+                                        sub_group["timestamps"].attrs['unit'])
             else:
-                times = pq.Quantity(sub_group["timestamps"].data,
-                                    sub_group["timestamps"].attrs['unit'])
-                indices = range(len(times))
+                if lazy:
+                    times = [] * pq.s
+                else:
+                    times = pq.Quantity(sub_group["timestamps"].data,
+                                        sub_group["timestamps"].attrs['unit'])
+                    indices = range(len(times))
             t_stop = sub_group.attrs['stop_time']
             t_start = sub_group.attrs['start_time']
-            metadata.update(sub_group.attrs.dict)
+            metadata.update(sub_group.attrs.to_dict())
         else:
             raise ValueError('Expected a sub group of UnitTimes or an ' +
                              'EventWaveform group')
         if read_waveforms:
             waveforms = []
             for wf in wf_group.values():
-                data = pq.Quantity(wf["data"].data[indices, :, :],
-                                   wf["data"].attrs['unit'])
+                if lazy:
+                    data = [] * pq.dimensionless
+                else:
+                    data = pq.Quantity(wf["data"].data[indices, :, :],
+                                       wf["data"].attrs['unit'])
                 waveforms.append(data)
-                metadata.update(wf.attrs.dict)
+                metadata.update(wf.attrs.to_dict())
             waveforms = np.vstack(waveforms)
             # TODO assert shape of waveforms relative to channel_ids etc
             sampling_rate = wf["data"].attrs['sample_rate']
         else:
             waveforms = None
             sampling_rate = None
+        metadata.update({'exdir_path': path})
         sptr = SpikeTrain(times=times,
                           t_stop=t_stop,
                           t_start=t_start,
