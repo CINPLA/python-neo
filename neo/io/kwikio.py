@@ -95,7 +95,7 @@ class KwikIO(BaseIO):
                    lazy=False,
                    cascade=True,
                    get_waveforms=True,
-                   cluster_metadata='all',
+                   cluster_group=None,
                    raw_data_units='uV',
                    get_raw_data=False,
                    ):
@@ -109,11 +109,10 @@ class KwikIO(BaseIO):
             Wether or not to get the raw traces
         raw_data_units: str, default = "uV"
             SI units of the raw trace according to voltage_gain given to klusta
-        cluster_metadata: str, default = "all"
+        cluster_group: str, default = None
             Which clusters to load, possibilities are "noise", "unsorted",
-            "good", "all", if all is selected noise is omitted.
+            "good", if None all is loaded.
         """
-        assert isinstance(cluster_metadata, str)
         blk = Block()
         if cascade:
             seg = Segment(file_origin=self.filename)
@@ -129,16 +128,15 @@ class KwikIO(BaseIO):
                 clusters = model.spike_clusters
                 for cluster_id in model.cluster_ids:
                     meta = model.cluster_metadata[cluster_id]
-                    if cluster_metadata == 'all':
-                        if meta == 'noise':
-                            continue
-                    elif cluster_metadata != meta:
+                    if cluster_group is None:
+                        pass
+                    elif cluster_group != meta:
                         continue
                     sptr = self.read_spiketrain(cluster_id=cluster_id,
                                                 model=model, lazy=lazy,
                                                 cascade=cascade,
                                                 get_waveforms=get_waveforms)
-                    sptr.annotations.update({'cluster_metadata': meta,
+                    sptr.annotations.update({'cluster_group': meta,
                                              'group_id': model.channel_group})
                     sptr.channel_index = chx
                     unit = Unit()
