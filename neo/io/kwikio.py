@@ -135,7 +135,8 @@ class KwikIO(BaseIO):
                     sptr = self.read_spiketrain(cluster_id=cluster_id,
                                                 model=model, lazy=lazy,
                                                 cascade=cascade,
-                                                get_waveforms=get_waveforms)
+                                                get_waveforms=get_waveforms,
+                                                raw_data_units=raw_data_units)
                     sptr.annotations.update({'cluster_group': meta,
                                              'group_id': model.channel_group})
                     sptr.channel_index = chx
@@ -176,6 +177,7 @@ class KwikIO(BaseIO):
                         lazy=False,
                         cascade=True,
                         get_waveforms=True,
+                        raw_data_units=None
                         ):
         """
         Reads sorted spiketrains
@@ -200,6 +202,7 @@ class KwikIO(BaseIO):
             w = model.all_waveforms[idx]
             # klusta: num_spikes, samples_per_spike, num_chans = w.shape
             w = w.swapaxes(1, 2)
+            w = pq.Quantity(w, raw_data_units)
         else:
             w = None
         sptr = SpikeTrain(times=model.spike_times[idx],
