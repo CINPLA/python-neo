@@ -290,7 +290,6 @@ class ExdirIO(BaseIO):
     def read_block(self,
                    lazy=False,
                    cascade=True,
-                   cluster_group='all',
                    read_waveforms=True,
                    elphys_directory_name='electrophysiology'):
         '''
