@@ -213,6 +213,8 @@ class ExdirIO(BaseIO):
         epo_group.attrs = attrs
 
     def write_block(self, blk, elphys_directory_name='electrophysiology'):
+        if not isinstance(blk, Block):
+            raise ValueError('Input must be of type neo.Block')
         if len(blk.segments) > 1:
             raise ValueError('sorry, exdir supports only one segment')
         seg = blk.segments[0]
@@ -250,7 +252,10 @@ class ExdirIO(BaseIO):
         units = [unit for unit in chx.units]
         self.write_unit_times(units, segment_group.name, **attrs)
 
-    def write_channelindex(self, chx, path, **annotations):
+    def write_channelindex(self, chx, path=None,
+                           elphys_directory_name='electrophysiology',
+                           **annotations):
+        path = path or self._processing.require_group(elphys_directory_name).name
         group = self._exdir_directory[path]
         if 'group_id' in chx.annotations:
             group_id = chx.annotations['group_id']
