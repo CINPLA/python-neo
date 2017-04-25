@@ -140,7 +140,9 @@ class KwikIO(BaseIO):
                     sptr.annotations.update({'cluster_group': meta,
                                              'group_id': model.channel_group})
                     sptr.channel_index = chx
-                    unit = Unit()
+                    unit = Unit(cluster_group=meta,
+                                group_id=model.channel_group,
+                                name='unit #{}'.format(cluster_id))
                     unit.spiketrains.append(sptr)
                     chx.units.append(unit)
                     unit.channel_index = chx
