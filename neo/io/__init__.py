@@ -185,7 +185,9 @@ def get_io(filename, mode=None):
             else:
                 try:
                     return io(filename, mode=mode)
-                except:
-                    raise IOError("file extension %s is not compatible with mode %s" % (extension, mode))
+                except Exception:
+                    raise IOError("File extension '" + extension +
+                                  "' is not compatible " +
+                                  "with mode {}".format(mode))
 
-    raise IOError("file extension %s not registered" % extension)
+    raise IOError("File extension %s not registered" % extension)
