@@ -34,6 +34,7 @@ if python_version == 2:
 
 try:
     import exdir
+    import exdir.plugins.quantities
     HAVE_EXDIR = True
     EXDIR_ERR = None
 except ImportError as err:
@@ -83,7 +84,7 @@ class ExdirIO(BaseIO):
         if extension != ".exdir":
             raise ValueError("directory extension must be '.exdir'")
 
-        self._exdir_directory = exdir.File(directory=dirname, mode=mode)
+        self._exdir_directory = exdir.File(directory=dirname, mode=mode, plugins=exdir.plugins.quantities)
 
         # TODO check if group exists
         self._processing = self._exdir_directory.require_group("processing")
