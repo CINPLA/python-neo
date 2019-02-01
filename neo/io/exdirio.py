@@ -69,7 +69,7 @@ class ExdirIO(BaseIO):
     # thinfo is for GUI stuff also
     mode = 'dir'
 
-    def __init__(self, dirname, mode='a'):
+    def __init__(self, dirname, mode='a', plugins=[exdir.plugins.quantities]):
         """
         Arguments:
             directory_path : the directory path
@@ -84,7 +84,7 @@ class ExdirIO(BaseIO):
         if extension != ".exdir":
             raise ValueError("directory extension must be '.exdir'")
 
-        self._exdir_directory = exdir.File(directory=dirname, mode=mode, plugins=exdir.plugins.quantities)
+        self._exdir_directory = exdir.File(directory=dirname, mode=mode, plugins=plugins)
 
         # TODO check if group exists
         self._processing = self._exdir_directory.require_group("processing")
