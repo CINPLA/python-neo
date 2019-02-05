@@ -311,8 +311,14 @@ class ExdirIO(BaseIO):
         blk.segments.append(seg)
         if cascade:
             for group in self._epochs.values():
-                epo = self.read_epoch(group.name, cascade, lazy)
-                seg.epochs.append(epo)
+                if 'timestamps' in group.keys():
+                    epo = self.read_epoch(group.name, cascade, lazy)
+                    seg.epochs.append(epo)
+                else:
+                    for g in group.values():
+                        if 'timestamps' in g.keys():
+                            epo = self.read_epoch(g.name, cascade, lazy)
+                            seg.epochs.append(epo)
             for channel_group in self._processing[elphys_directory_name].values():
                 chx = self.read_channelindex(channel_group.name,
                                              cascade=cascade,
@@ -448,6 +454,7 @@ class ExdirIO(BaseIO):
             labels = None
         annotations = {'exdir_path': path}
         annotations.update(group.attrs.to_dict())
+
         if lazy:
             lazy_shape = (group.attrs['num_samples'],)
         else:
