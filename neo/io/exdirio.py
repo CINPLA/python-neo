@@ -301,7 +301,8 @@ class ExdirIO(BaseIO):
                    lazy=False,
                    cascade=True,
                    read_waveforms=True,
-                   elphys_directory_name='electrophysiology'):
+                   elphys_directory_name='electrophysiology',
+                   channel_group_idx=None):
         '''
 
         '''
@@ -320,14 +321,25 @@ class ExdirIO(BaseIO):
                             epo = self.read_epoch(g.name, cascade, lazy)
                             seg.epochs.append(epo)
             for channel_group in self._processing[elphys_directory_name].values():
-                chx = self.read_channelindex(channel_group.name,
-                                             cascade=cascade,
-                                             lazy=lazy,
-                                             read_waveforms=read_waveforms)
-                blk.channel_indexes.append(chx)
-                seg.analogsignals.extend(chx.analogsignals)
-                seg.spiketrains.extend([sptr for unit in chx.units
-                                        for sptr in unit.spiketrains])
+                if channel_group_idx is None:
+                    chx = self.read_channelindex(channel_group.name,
+                                                 cascade=cascade,
+                                                 lazy=lazy,
+                                                 read_waveforms=read_waveforms)
+                    blk.channel_indexes.append(chx)
+                    seg.analogsignals.extend(chx.analogsignals)
+                    seg.spiketrains.extend([sptr for unit in chx.units
+                                            for sptr in unit.spiketrains])
+                else:
+                    if str(channel_group_idx) in channel_group.name:
+                        chx = self.read_channelindex(channel_group.name,
+                                                     cascade=cascade,
+                                                     lazy=lazy,
+                                                     read_waveforms=read_waveforms)
+                        blk.channel_indexes.append(chx)
+                        seg.analogsignals.extend(chx.analogsignals)
+                        seg.spiketrains.extend([sptr for unit in chx.units
+                                                for sptr in unit.spiketrains])
         return blk
 
     def read_segment(self, cascade=True, lazy=False, read_waveforms=True):
@@ -568,6 +580,7 @@ class ExdirIO(BaseIO):
             waveforms = None
             sampling_rate = None
         metadata.update({'exdir_path': path})
+        print(group.name, len(times), len(waveforms))
         sptr = SpikeTrain(times=times,
                           t_stop=t_stop,
                           t_start=t_start,
