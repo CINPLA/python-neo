@@ -580,7 +580,6 @@ class ExdirIO(BaseIO):
             waveforms = None
             sampling_rate = None
         metadata.update({'exdir_path': path})
-        print(group.name, len(times), len(waveforms))
         sptr = SpikeTrain(times=times,
                           t_stop=t_stop,
                           t_start=t_start,
