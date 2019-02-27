@@ -8,10 +8,7 @@ from __future__ import absolute_import, division, print_function
 
 from datetime import datetime
 
-try:
-    import unittest2 as unittest
-except ImportError:
-    import unittest
+import unittest
 
 import numpy as np
 import quantities as pq
@@ -162,20 +159,20 @@ class TestSegment(unittest.TestCase):
 
         seed = seg.annotations['seed']
 
-        targ0 = get_fake_value('file_datetime', datetime, seed=seed+0)
+        targ0 = get_fake_value('file_datetime', datetime, seed=seed + 0)
         self.assertEqual(seg.file_datetime, targ0)
 
-        targ1 = get_fake_value('rec_datetime', datetime, seed=seed+1)
+        targ1 = get_fake_value('rec_datetime', datetime, seed=seed + 1)
         self.assertEqual(seg.rec_datetime, targ1)
 
-        targ2 = get_fake_value('index', int, seed=seed+2)
+        targ2 = get_fake_value('index', int, seed=seed + 2)
         self.assertEqual(seg.index, targ2)
 
-        targ3 = get_fake_value('name', str, seed=seed+3, obj=Segment)
+        targ3 = get_fake_value('name', str, seed=seed + 3, obj=Segment)
         self.assertEqual(seg.name, targ3)
 
         targ4 = get_fake_value('description', str,
-                               seed=seed+4, obj=Segment)
+                               seed=seed + 4, obj=Segment)
         self.assertEqual(seg.description, targ4)
 
         targ5 = get_fake_value('file_origin', str)
@@ -199,7 +196,7 @@ class TestSegment(unittest.TestCase):
         self.assertEqual(len(seg.epochs), self.nchildren)
         self.assertEqual(len(seg.events), self.nchildren)
 
-        self.assertEqual(len(seg.spiketrains), self.nchildren**2)
+        self.assertEqual(len(seg.spiketrains), self.nchildren ** 2)
 
     def test__creation(self):
         self.check_creation(self.seg1)
@@ -207,7 +204,7 @@ class TestSegment(unittest.TestCase):
 
     def test_times(self):
 
-        for seg in [self.seg1,self.seg2]:
+        for seg in [self.seg1, self.seg2]:
             # calculate target values for t_start and t_stop
             t_starts, t_stops = [], []
             for children in [seg.analogsignals,
@@ -216,21 +213,21 @@ class TestSegment(unittest.TestCase):
                              seg.irregularlysampledsignals,
                              seg.spiketrains]:
                 for child in children:
-                    if hasattr(child,'t_start'):
+                    if hasattr(child, 't_start'):
                         t_starts.append(child.t_start)
-                    if hasattr(child,'t_stop'):
+                    if hasattr(child, 't_stop'):
                         t_stops.append(child.t_stop)
-                    if hasattr(child,'time'):
+                    if hasattr(child, 'time'):
                         t_starts.append(child.time)
                         t_stops.append(child.time)
-                    if hasattr(child,'times'):
+                    if hasattr(child, 'times'):
                         t_starts.append(child.times[0])
                         t_stops.append(child.times[-1])
             targ_t_start = min(t_starts)
             targ_t_stop = max(t_stops)
 
-            self.assertEqual(seg.t_start,targ_t_start)
-            self.assertEqual(seg.t_stop,targ_t_stop)
+            self.assertEqual(seg.t_start, targ_t_start)
+            self.assertEqual(seg.t_stop, targ_t_stop)
 
     def test__merge(self):
         seg1a = fake_neo(Block, seed=self.seed1, n=self.nchildren).segments[0]
@@ -285,10 +282,10 @@ class TestSegment(unittest.TestCase):
         self.assertEqual(self.seg1._parent_objects, ('Block',))
         self.assertEqual(self.seg1._parent_containers, ('block',))
 
-        totchildren = (self.nchildren*2 +   # epoch/event
-                       self.nchildren +     # analogsignal
-                       self.nchildren**2 +  # spiketrain
-                       self.nchildren)      # irregsignal
+        totchildren = (self.nchildren * 2 +  # epoch/event
+                       self.nchildren +  # analogsignal
+                       self.nchildren ** 2 +  # spiketrain
+                       self.nchildren)  # irregsignal
         self.assertEqual(len(self.seg1._single_children), totchildren)
         self.assertEqual(len(self.seg1.data_children), totchildren)
         self.assertEqual(len(self.seg1.children), totchildren)
@@ -313,14 +310,20 @@ class TestSegment(unittest.TestCase):
         self.assertEqual(self.seg1.parents[0].name, 'block1')
 
     def test__size(self):
-        targ1 = {"epochs": self.nchildren,  "events": self.nchildren,
+        targ1 = {"epochs": self.nchildren, "events": self.nchildren,
                  "irregularlysampledsignals": self.nchildren,
-                 "spiketrains": self.nchildren**2,
+                 "spiketrains": self.nchildren ** 2,
                  "analogsignals": self.nchildren}
         self.assertEqual(self.targobj.size, targ1)
 
     def test__filter_none(self):
         targ = []
+        # collecting all data objects in target block
+        targ.extend(self.targobj.analogsignals)
+        targ.extend(self.targobj.epochs)
+        targ.extend(self.targobj.events)
+        targ.extend(self.targobj.irregularlysampledsignals)
+        targ.extend(self.targobj.spiketrains)
 
         res0 = self.targobj.filter()
         res1 = self.targobj.filter({})
@@ -420,9 +423,9 @@ class TestSegment(unittest.TestCase):
     def test__filter_multi_nores(self):
         targ = []
 
-        res0 = self.targobj.filter([{'j': 0}, {}])
-        res1 = self.targobj.filter({}, ttype=0)
-        res2 = self.targobj.filter([{}], ttype=0)
+        res0 = self.targobj.filter([{'j': 5}, {}])
+        res1 = self.targobj.filter({}, ttype=6)
+        res2 = self.targobj.filter([{}], ttype=6)
         res3 = self.targobj.filter({'name': self.epcs1a[1].name}, j=0)
         res4 = self.targobj.filter(targdict={'name': self.epcs1a[1].name},
                                    j=0)
@@ -477,6 +480,20 @@ class TestSegment(unittest.TestCase):
         assert_same_sub_schema(res4, targ)
         assert_same_sub_schema(res5, targ)
 
+    def test__filter_no_annotation_but_object(self):
+        targ = self.targobj.spiketrains
+        res = self.targobj.filter(objects=SpikeTrain)
+        assert_same_sub_schema(res, targ)
+
+        targ = self.targobj.analogsignals
+        res = self.targobj.filter(objects=AnalogSignal)
+        assert_same_sub_schema(res, targ)
+
+        targ = self.targobj.analogsignals + self.targobj.spiketrains
+        res = self.targobj.filter(objects=[AnalogSignal, SpikeTrain])
+        assert_same_sub_schema(res, targ)
+        assert_same_sub_schema(res, targ)
+
     def test__filter_single_annotation_obj_single(self):
         targ = [self.epcs1a[1]]
 
@@ -485,7 +502,7 @@ class TestSegment(unittest.TestCase):
         res2 = self.targobj.filter(j=1, objects=['Epoch'])
         res3 = self.targobj.filter(j=1, objects=[Epoch])
         res4 = self.targobj.filter(j=1, objects=[Epoch,
-                                   ChannelIndex])
+                                                 ChannelIndex])
 
         assert_same_sub_schema(res0, targ)
         assert_same_sub_schema(res1, targ)
@@ -620,7 +637,7 @@ class TestSegment(unittest.TestCase):
 
         targ = []
 
-        res0 = filterdata(data, [{'j': 0}, {}])
+        res0 = filterdata(data, [{'j': 5}, {}])
         res1 = filterdata(data, {}, ttype=0)
         res2 = filterdata(data, [{}], ttype=0)
         res3 = filterdata(data, {'name': self.epcs1a[1].name}, j=0)
@@ -735,10 +752,10 @@ class TestSegment(unittest.TestCase):
 
             for t in signal_types:
                 anasigarr = AnalogSignal(np.zeros((sig_len,
-                                                        len(unit_with_sig))),
-                                              units='nA',
-                                              sampling_rate=1000.*pq.Hz,
-                                              channel_indexes=unit_with_sig)
+                                                   len(unit_with_sig))),
+                                         units='nA',
+                                         sampling_rate=1000. * pq.Hz,
+                                         channel_indexes=unit_with_sig)
                 seg.analogsignals.append(anasigarr)
 
         blk.create_many_to_one_relationship()
@@ -762,7 +779,7 @@ class TestSegment(unittest.TestCase):
         assert_same_sub_schema(result21, [self.trains1a[0]])
         assert_same_sub_schema(result22, [self.trains1a[1]])
 
-# to remove
+    # to remove
     # def test_segment_take_analogsignal_by_unit(self):
     #     result1 = self.seg1.take_analogsignal_by_unit()
     #     result21 = self.seg1.take_analogsignal_by_unit([self.unit1])
@@ -785,7 +802,7 @@ class TestSegment(unittest.TestCase):
     #     assert_same_sub_schema(result21, [self.sigs1a[0]])
     #     assert_same_sub_schema(result22, [self.sigs1a[1]])
 
-# commenting out temporarily
+    # commenting out temporarily
     # def test_seg_take_slice_of_analogsignalarray_by_unit(self):
     #     seg = self.seg1
     #     result1 = seg.take_slice_of_analogsignalarray_by_unit()

@@ -33,7 +33,18 @@ and may not be the current affiliation of a contributor.
 * Carlos Canova [13]
 * Hélissande Fragnaud [2]
 * Mark Hollenbeck [14]
-
+* Mieszko Grodzicki
+* Rick Gerkin [15]
+* Matthieu Sénoville [2]
+* Chadwick Boulay [16]
+* Björn Müller [13]
+* William Hart [17]
+* erikli(github)
+* Jeffrey Gill [18]
+* Lucas (lkoelman@github)
+* Mark Histed
+* Mike Sintsov
+* Scott W Harden [19]
 
 1. Centre de Recherche en Neuroscience de Lyon, CNRS UMR5292 - INSERM U1028 - Universite Claude Bernard Lyon 1
 2. Unité de Neuroscience, Information et Complexité, CNRS UPR 3293, Gif-sur-Yvette, France
@@ -49,5 +60,10 @@ and may not be the current affiliation of a contributor.
 12. University of Virginia
 13. INM-6, Forschungszentrum Jülich, Germany
 14. University of Texas at Austin
+15. Arizona State University
+16. Ottawa Hospital Research Institute, Canada
+17. Swinburne University of Technology, Australia
+18. Case Western Reserve University (CWRU) · Department of Biology
+19. Harden Technologies, LLC
 
 If we've somehow missed you off the list we're very sorry - please let us know.

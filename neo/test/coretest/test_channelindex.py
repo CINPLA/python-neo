@@ -6,10 +6,7 @@ Tests of the neo.core.channelindex.ChannelIndex class
 # needed for python 3 compatibility
 from __future__ import absolute_import, division, print_function
 
-try:
-    import unittest2 as unittest
-except ImportError:
-    import unittest
+import unittest
 
 import numpy as np
 
@@ -22,7 +19,7 @@ else:
 
 from neo.core.channelindex import ChannelIndex
 from neo.core.container import filterdata
-from neo.core import Block, Segment, SpikeTrain
+from neo.core import Block, Segment, SpikeTrain, AnalogSignal
 from neo.test.tools import (assert_neo_object_is_compliant,
                             assert_arrays_equal,
                             assert_same_sub_schema)
@@ -177,12 +174,12 @@ class TestChannelIndex(unittest.TestCase):
         #         self.assertEqual(unit.channel_indexes[0],
         #                          sigarr.channel_index[i])
 
-        targ2 = get_fake_value('name', str, seed=seed+4,
+        targ2 = get_fake_value('name', str, seed=seed + 4,
                                obj=ChannelIndex)
         self.assertEqual(chx.name, targ2)
 
         targ3 = get_fake_value('description', str,
-                               seed=seed+5, obj=ChannelIndex)
+                               seed=seed + 5, obj=ChannelIndex)
         self.assertEqual(chx.description, targ3)
 
         targ4 = get_fake_value('file_origin', str)
@@ -223,7 +220,8 @@ class TestChannelIndex(unittest.TestCase):
         blk.create_many_to_one_relationship()
 
         self.assertEqual(self.chx1._container_child_objects, ('Unit',))
-        self.assertEqual(self.chx1._data_child_objects, ('AnalogSignal', 'IrregularlySampledSignal'))
+        self.assertEqual(self.chx1._data_child_objects,
+                         ('AnalogSignal', 'IrregularlySampledSignal'))
         self.assertEqual(self.chx1._single_parent_objects, ('Block',))
         self.assertEqual(self.chx1._multi_child_objects, tuple())
         self.assertEqual(self.chx1._multi_parent_objects, ())
@@ -249,22 +247,21 @@ class TestChannelIndex(unittest.TestCase):
         self.assertEqual(self.chx1._parent_objects, ('Block',))
         self.assertEqual(self.chx1._parent_containers, ('block',))
 
-        self.assertEqual(len(self.chx1._single_children), 3*self.nchildren)
+        self.assertEqual(len(self.chx1._single_children), 3 * self.nchildren)
         self.assertEqual(len(self.chx1._multi_children), 0)
-        self.assertEqual(len(self.chx1.data_children), 2*self.nchildren)
+        self.assertEqual(len(self.chx1.data_children), 2 * self.nchildren)
         self.assertEqual(len(self.chx1.data_children_recur),
-                         2*self.nchildren + 1*self.nchildren**2)
-        self.assertEqual(len(self.chx1.container_children), 1*self.nchildren)
+                         2 * self.nchildren + 1 * self.nchildren ** 2)
+        self.assertEqual(len(self.chx1.container_children), 1 * self.nchildren)
         self.assertEqual(len(self.chx1.container_children_recur),
-                         1*self.nchildren)
-        self.assertEqual(len(self.chx1.children), 3*self.nchildren)
+                         1 * self.nchildren)
+        self.assertEqual(len(self.chx1.children), 3 * self.nchildren)
         self.assertEqual(len(self.chx1.children_recur),
-                         3*self.nchildren + 1*self.nchildren**2)
+                         3 * self.nchildren + 1 * self.nchildren ** 2)
 
         assert_same_sub_schema(list(self.chx1._single_children),
                                self.units1a + self.sigarrs1a + self.irrsig1a,
                                exclude=['channel_index'])
-
 
         assert_same_sub_schema(list(self.chx1.data_children), self.sigarrs1a + self.irrsig1a,
                                exclude=['channel_index'])
@@ -293,6 +290,11 @@ class TestChannelIndex(unittest.TestCase):
 
     def test__filter_none(self):
         targ = []
+        # collecting all data objects in target block
+        targ.extend(self.targobj.analogsignals)
+        targ.extend(self.targobj.irregularlysampledsignals)
+        for unit in self.targobj.units:
+            targ.extend(unit.spiketrains)
 
         res1 = self.targobj.filter()
         res2 = self.targobj.filter({})
@@ -391,8 +393,8 @@ class TestChannelIndex(unittest.TestCase):
 
         name0 = self.sigarrs2[0].name
         res0 = self.targobj.filter([{'j': 5}, {}])
-        res1 = self.targobj.filter({}, j=0)
-        res2 = self.targobj.filter([{}], i=0)
+        res1 = self.targobj.filter({}, j=5)
+        res2 = self.targobj.filter([{}], i=5)
         res3 = self.targobj.filter({'name': name0}, j=1)
         res4 = self.targobj.filter(targdict={'name': name0}, j=1)
         res5 = self.targobj.filter(name=name0, targdict={'j': 1})
@@ -444,6 +446,24 @@ class TestChannelIndex(unittest.TestCase):
         assert_same_sub_schema(res0, targ)
         assert_same_sub_schema(res1, targ)
         assert_same_sub_schema(res2, targ)
+
+    def test__filter_no_annotation_but_object(self):
+        targ = []
+        for unit in self.targobj.units:
+            targ.extend(unit.spiketrains)
+        res = self.targobj.filter(objects=SpikeTrain)
+        assert_same_sub_schema(res, targ)
+
+        targ = self.targobj.analogsignals
+        res = self.targobj.filter(objects=AnalogSignal)
+        assert_same_sub_schema(res, targ)
+
+        targ = []
+        targ.extend(self.targobj.analogsignals)
+        for unit in self.targobj.units:
+            targ.extend(unit.spiketrains)
+        res = self.targobj.filter(objects=[AnalogSignal, SpikeTrain])
+        assert_same_sub_schema(res, targ)
 
     def test__filter_single_annotation_obj_single(self):
         targ = [self.trains1[1], self.trains1[3]]
@@ -519,7 +539,6 @@ class TestChannelIndex(unittest.TestCase):
         res0 = self.targobj.filter(name=self.trains1[0].name, container=True)
         assert_same_sub_schema(res0, targ)
 
-
     def test__filter_single_annotation_container_norecur(self):
         targ = [self.sigarrs1[1], self.irrsig1[1], self.units1[1]]
 
@@ -583,9 +602,9 @@ class TestChannelIndex(unittest.TestCase):
 
         name1 = self.sigarrs1a[0].name
         name2 = self.sigarrs2[0].name
-        res0 = filterdata(data, [{'j': 0}, {}])
-        res1 = filterdata(data, {}, i=0)
-        res2 = filterdata(data, [{}], i=0)
+        res0 = filterdata(data, [{'j': 5}, {}])
+        res1 = filterdata(data, {}, i=5)
+        res2 = filterdata(data, [{}], i=5)
         res3 = filterdata(data, name=name1, targdict={'j': 1})
         res4 = filterdata(data, {'name': name1}, j=1)
         res5 = filterdata(data, targdict={'name': name1}, j=1)
@@ -643,24 +662,24 @@ class TestChannelIndex(unittest.TestCase):
         assert_same_sub_schema(res1, targ)
         assert_same_sub_schema(res2, targ)
 
-    # @unittest.skipUnless(HAVE_IPYTHON, "requires IPython")
-    # def test__pretty(self):
-    #     res = pretty(self.chx1)
-    #     ann = get_annotations()
-    #     ann['seed'] = self.seed1
-    #     ann = pretty(ann).replace('\n ', '\n  ')
-    #     targ = ("ChannelIndex with " +
-    #             ("%s units, %s analogsignals, %s irregularlysampledsignals\n" %
-    #              (len(self.units1a),
-    #               len(self.irrsig1a),
-    #               len(self.sigarrs1a),
-    #               )) +
-    #             ("name: '%s'\ndescription: '%s'\n" % (self.chx1.name,
-    #                                                   self.chx1.description)
-    #              ) +
-    #             ("annotations: %s" % ann))
-    #
-    #     self.assertEqual(res, targ)
+        # @unittest.skipUnless(HAVE_IPYTHON, "requires IPython")
+        # def test__pretty(self):
+        #     res = pretty(self.chx1)
+        #     ann = get_annotations()
+        #     ann['seed'] = self.seed1
+        #     ann = pretty(ann).replace('\n ', '\n  ')
+        #     targ = ("ChannelIndex with " +
+        #             ("%s units, %s analogsignals, %s irregularlysampledsignals\n" %
+        #              (len(self.units1a),
+        #               len(self.irrsig1a),
+        #               len(self.sigarrs1a),
+        #               )) +
+        #             ("name: '%s'\ndescription: '%s'\n" % (self.chx1.name,
+        #                                                   self.chx1.description)
+        #              ) +
+        #             ("annotations: %s" % ann))
+        #
+        #     self.assertEqual(res, targ)
 
 
 if __name__ == '__main__':

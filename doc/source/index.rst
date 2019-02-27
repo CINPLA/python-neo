@@ -6,7 +6,7 @@
 Neo is a Python package for working with electrophysiology data in Python, together
 with support for reading a wide range of neurophysiology file formats, including
 Spike2, NeuroExplorer, AlphaOmega, Axon, Blackrock, Plexon, Tdt, Igor Pro, and support for
-writing to a subset of these formats plus non-proprietary formats including Klustakwik and HDF5.
+writing to a subset of these formats plus non-proprietary formats including Kwik and HDF5.
 
 The goal of Neo is to improve interoperability between Python tools for
 analyzing, visualizing and generating electrophysiology data, by providing a common,
@@ -14,9 +14,12 @@ shared object model. In order to be as lightweight a dependency as possible,
 Neo is deliberately limited to represention of data, with no functions for data
 analysis or visualization.
 
-Neo is used by a number of other software tools, including OpenElectrophy_
-and SpykeViewer_ (data analysis and visualization), Elephant_ (data analysis),
-the G-node_ suite (databasing) and PyNN_ (simulations).
+Neo is used by a number of other software tools, including 
+SpykeViewer_ (data analysis and visualization), Elephant_ (data analysis),
+the G-node_ suite (databasing), PyNN_ (simulations), tridesclous_ (spike sorting)
+and ephyviewer_ (data visualization).
+OpenElectrophy_ (data analysis and visualization) used an older version of Neo.
+
 
 Neo implements a hierarchical data model well adapted to intracellular and
 extracellular electrophysiology and EEG data with support for multi-electrodes
@@ -38,6 +41,7 @@ Documentation
    core
    usecases
    io
+   rawio
    examples
    api_reference
    whatisnew
@@ -68,6 +72,12 @@ and all contributions are welcomed - see the :doc:`developers_guide` for more in
 `Source code <https://github.com/NeuralEnsemble/python-neo>`_ is on GitHub.
 
 
+Citation
+--------
+
+.. include:: ../../CITATION.txt
+
+
 .. _OpenElectrophy: https://github.com/OpenElectrophy/OpenElectrophy
 .. _Elephant: http://neuralensemble.org/elephant
 .. _G-node: http://www.g-node.org/
@@ -78,3 +88,5 @@ and all contributions are welcomed - see the :doc:`developers_guide` for more in
 .. _quantities: http://pypi.python.org/pypi/quantities
 .. _`NeuralEnsemble mailing list`: http://groups.google.com/group/neuralensemble
 .. _`issue tracker`: https://github.com/NeuralEnsemble/python-neo/issues
+.. _tridesclous: https://github.com/tridesclous/tridesclous
+.. _ephyviewer: https://github.com/NeuralEnsemble/ephyviewer

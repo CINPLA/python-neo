@@ -9,10 +9,7 @@ from __future__ import absolute_import, division, print_function
 import os.path
 import sys
 
-try:
-    import unittest2 as unittest
-except ImportError:
-    import unittest
+import unittest
 
 import numpy as np
 import quantities as pq
@@ -48,9 +45,9 @@ def proc_dam(filename):
              dam file name = 'file1.dam'
     '''
     with np.load(filename) as damobj:
-        damfile = damobj.items()[0][1].flatten()
+        damfile = list(damobj.items())[0][1].flatten()
 
-    filename = os.path.basename(filename[:-12]+'.dam')
+    filename = os.path.basename(filename[:-12] + '.dam')
 
     signals = [res.flatten() for res in damfile['signal']]
     stimIndexes = [int(res[0, 0].tolist()) for res in damfile['stimIndex']]
@@ -73,10 +70,10 @@ def proc_dam(filename):
 
     fulldam = zip(stimIndexes, timestamps, signals, stims)
     for stimIndex, timestamp, signal, stim in fulldam:
-        sig = AnalogSignal(signal=signal*pq.mV,
-                           t_start=timestamp*pq.d,
+        sig = AnalogSignal(signal=signal * pq.mV,
+                           t_start=timestamp * pq.d,
                            file_origin=filename,
-                           sampling_period=1.*pq.s)
+                           sampling_period=1. * pq.s)
         segment = Segment(file_origin=filename,
                           index=stimIndex,
                           **stim)

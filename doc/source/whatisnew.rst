@@ -5,9 +5,14 @@ Release notes
 
 .. toctree::
    :maxdepth: 1
-
-   releases/0.5.0.rst
+   
+   releases/0.7.0.rst
+   releases/0.6.0.rst
+   releases/0.5.2.rst
    releases/0.5.1.rst
+   releases/0.5.0.rst
+   
+   
 
 ..   releases/0.2.0.rst
 ..   releases/0.2.1.rst
@@ -15,8 +20,6 @@ Release notes
 ..   releases/0.3.1.rst
 ..   releases/0.3.2.rst
 ..   releases/0.3.3.rst
-
-
 
 
 Version 0.4.0
