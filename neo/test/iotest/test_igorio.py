@@ -3,12 +3,11 @@
 Tests of neo.io.igorproio
 """
 
-try:
-    import unittest2 as unittest
-except ImportError:
-    import unittest
+import unittest
+
 try:
     import igor
+
     HAVE_IGOR = True
 except ImportError:
     HAVE_IGOR = False
